@@ -49,7 +49,7 @@ function serveStatic(resp, path, basePath) {
 
 // ----------------------------------------------------------------------------------------
 
-// Create a server for the client html page
+// create a server for the client html page
 var httpServer = http.createServer(function(req, resp) {
 	var url = urllib.parse(req.url, true);
 
