@@ -3,8 +3,8 @@ var http = require('http');
 var urllib = require('url');
 var WebSocketServer = require('ws').Server;
 
-var server_port = process.env.OPENSHIFT_NODEJS_PORT || 8888;
 var server_ip_address = process.env.OPENSHIFT_NODEJS_IP || '0.0.0.0';
+var server_port = process.env.OPENSHIFT_NODEJS_PORT || 8888;
 
 function serveStatic(resp, path, basePath) {
 	var inferMime = function(fname) {
@@ -78,7 +78,7 @@ var httpServer = http.createServer(function(req, resp) {
 	}, 1000);
 });
 httpServer.listen(server_port, server_ip_address, function () {
-  console.log( "Listening on " + server_ip_address + ", server_port " + port )
+	console.log( "Listening on " + server_ip_address + ":" + server_port )
 });
 
 
