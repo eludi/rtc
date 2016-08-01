@@ -5,6 +5,7 @@ var WebSocketServer = require('ws').Server;
 
 var server_ip_address = process.env.OPENSHIFT_NODEJS_IP || '0.0.0.0';
 var server_port = process.env.OPENSHIFT_NODEJS_PORT || 8888;
+var isOpenshift = (process.env.OPENSHIFT_NODEJS_IP!=null);
 
 function serveStatic(resp, path, basePath) {
 	var inferMime = function(fname) {
@@ -58,12 +59,11 @@ var httpServer = http.createServer(function(req, resp) {
 		path.pop();
 	if(!path.length || path[0]=='index.html')
 		path = [ 'static', 'index.html' ];
-	var transportLayer = req.connection.encrypted ? 'https' : 'http';
+	var transportLayer = (req.connection.encrypted || (isOpenShift && req.headers['x-forwarded-proto']=='https')) ? 'https' : 'http';
 	console.log(transportLayer, '>>', req.url);
 
 	switch(path[0]) { // toplevel services:
-	case 'hello':
-		console.log(req);
+	case 'hello':;
 		resp.writeHead(200, {'Content-Type': 'text/plain'});
 		resp.end('Hello, world.\n');
 		return;
