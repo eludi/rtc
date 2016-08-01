@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>eludi websocket chat</title>
+		<meta name="author" content="Gerald Franz"/>
+		<meta name="keywords" content="eludi, chat"/>
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="viewport" content="user-scalable=no, width=device-width" />
+		<style type="text/css">
+body {
+	font-family:sans-serif;
+}
+#paneForm {
+	max-width:960px;
+	margin:0 auto;
+}
+#paneForm input {
+	box-sizing: border-box; -webkit-box-sizing: border-box; -moz-box-sizing: border-box;
+	width:100%;
+	margin: 0 0 0.2em 0;
+}
+#paneForm label {
+	font-size:71%;
+	font-weight:bold;
+}
+		</style>
+
+		<script type="text/javascript">
+cfg = {
+	baseUrl:location.hostname + ':'+ location.port,
+}
+
+function App(cfg) {
+	var app = this;
+	this.handleServerMessage = function(msg) {
+		console.log('<< '+msg);
+		var msg = JSON.parse(msg);
+		switch(msg.event) {
+		case 'connect':
+			return this.log(msg.data.name+' connected. peers:'+JSON.stringify(msg.data.peers));
+		case 'disconnect':
+			return this.log(msg.data.name+' disconnected');
+		case 'chat':
+			return this.log(msg.data.name+' >> '+msg.data.data);
+			break;
+		default:
+			return console.error('unrecognized websocket event:'+msg.event+' data:'+JSON.stringify(msg.data));
+		}
+	}
+
+	this.connect = function(channel, name) {
+		window.console && console.log('connect(',channel,',',name,')');
+
+		if(this.socket && this.socket.readyState<3) {
+			delete this.socket;
+			this.socket = null;
+		}
+		if(!navigator.onLine) {
+			app.status('no internet connection');
+			setTimeout(function() { app.connect(chanel, name); }, 4000);
+			return;
+		}
+		this.status("connecting...");
+		var socket = this.socket = new WebSocket(
+			'ws://' + cfg.baseUrl +'/'+channel+'?name='+encodeURIComponent(name));
+		socket.onmessage = function(msg) { app.handleServerMessage(msg.data); }
+		socket.onerror = function(evt) {
+			this.status = 'error';
+			if(app.socket!=this)
+				return;
+			delete app.socket;
+			app.socket = null;
+			app.status("server not reachable");
+			document.querySelector('#btn_connect').style.display='';
+			document.querySelector('#btn_disconnect').style.display='none';
+		}
+		socket.onopen = function(evt) {
+			if(app.socket!=this)
+				return;
+			document.querySelector('#btn_connect').style.display='none';
+			document.querySelector('#btn_disconnect').style.display='';
+			app.status("connected.");
+		}
+		socket.onclose = function(evt) {
+			if(app.socket!=this)
+				return;
+			if(this.status!='error')
+				app.status("connection closed.");
+			delete app.socket;
+			app.socket = null;
+		}
+	}
+	this.disconnect = function() {
+		window.console && console.log('disconnect()');
+		document.querySelector('#btn_connect').style.display='';
+		document.querySelector('#btn_disconnect').style.display='none';
+
+		if(!this.socket)
+			return;
+		if(this.socket.readyState==1)
+			this.socket.close();
+		this.status('disconnected');
+	}
+	this.sendEvent = function(event, data) {
+		if(!this.socket||!event || this.socket.readyState!=1)
+			return false;
+		var msg = { event:event };
+		if(data!==undefined)
+			msg.data = data;
+		msg = JSON.stringify(msg);
+		console.log('>> '+msg);
+		this.socket.send(msg);
+		return true;
+	}
+	this.log = function(str) {
+		console.log(str);
+		document.querySelector('#output').innerHTML = str +'<br/>\n' + document.querySelector('#output').innerHTML;
+	}
+	this.status = function(str) {
+		console.log('status',str);
+		this.statusMsg = str;
+		document.querySelector('#status').innerHTML = str;
+	}
+
+	this.socket = null;
+	this.statusMsg = 'init';
+}
+
+ui = {
+	onMsgKeyPress: function(event, value) {
+		if (!event)
+			event = window.event;
+		var key=event.keyCode || event.which;
+		if(key==13) { // enter
+			if(app) app.sendEvent('chat', value);
+			document.getElementById("input").value = '';
+		}
+	}
+}
+
+app = null;
+window.onload = function() {
+	if(localStorage && localStorage.chat) {
+		var settings = JSON.parse(localStorage.chat);
+		for(var key in settings) {
+			var v = settings[key];
+			cfg[key] = v;
+			document.getElementById(key).value = (typeof v == 'object') ? JSON.stringify(v) : v;
+		}
+	}
+	app = new App(cfg);
+	
+}
+window.onunload = function() {
+	if(app)
+		app.disconnect();
+}
+
+		</script>
+	</head>
+
+	<body>
+		<div id="paneForm">
+			<label for="channel">channel</label>
+			<input type="text" id="channel"/>
+			<label for="name">nick name</label>
+			<input type="text" id="name"/>
+			<div>
+				<button id="btn_connect" onclick="app.connect(document.querySelector('#channel').value, document.querySelector('#name').value)">connect</button>
+				<button id="btn_disconnect" style="display:none;" onclick="app.disconnect()">disconnect</button>
+				<span id="status"></span>
+			</div>
+			<label for="input">input</label>
+			<input type="text" id="input" onchange="app.sendEvent('chat', this.value);" onkeypress="ui.onMsgKeyPress(event, this.value);" value=""/>
+			<label for="output">output</label>
+			<div id="output" style="border:1px silver solid;height:16em; overflow:scroll;"></div>
+		</div>
+	</body>
+</html>
+
