@@ -59,7 +59,7 @@ var httpServer = http.createServer(function(req, resp) {
 		path.pop();
 	if(!path.length || path[0]=='index.html')
 		path = [ 'static', 'index.html' ];
-	var transportLayer = (req.connection.encrypted || (isOpenShift && req.headers['x-forwarded-proto']=='https')) ? 'https' : 'http';
+	var transportLayer = (req.connection.encrypted || (isOpenshift && req.headers['x-forwarded-proto']=='https')) ? 'https' : 'http';
 	console.log(transportLayer, '>>', req.url);
 
 	switch(path[0]) { // toplevel services:
