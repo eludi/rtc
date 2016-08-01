@@ -63,6 +63,7 @@ var httpServer = http.createServer(function(req, resp) {
 
 	switch(path[0]) { // toplevel services:
 	case 'hello':
+		console.log(req);
 		resp.writeHead(200, {'Content-Type': 'text/plain'});
 		resp.end('Hello, world.\n');
 		return;
