@@ -58,7 +58,8 @@ var httpServer = http.createServer(function(req, resp) {
 		path.pop();
 	if(!path.length || path[0]=='index.html')
 		path = [ 'static', 'index.html' ];
-	console.log('http >>', req.url);
+	var transportLayer = req.connection.encrypted ? 'https' : 'http';
+	console.log(transportLayer, '>>', req.url);
 
 	switch(path[0]) { // toplevel services:
 	case 'hello':
