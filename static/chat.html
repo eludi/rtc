@@ -26,70 +26,66 @@ body {
 }
 		</style>
 
+		<script type="text/javascript" src="/static/EventSocket.js"></script>
 		<script type="text/javascript">
 cfg = {
-	baseUrl:location.hostname + ':'+ location.port,
+	server:location.hostname + ':'+ location.port,
 }
 
 function App(cfg) {
-	var app = this;
-	this.handleServerMessage = function(msg) {
-		console.log('<< '+msg);
-		var msg = JSON.parse(msg);
-		switch(msg.event) {
-		case 'connect':
-			return this.log(msg.data.name+' connected. peers:'+JSON.stringify(msg.data.peers));
-		case 'disconnect':
-			return this.log(msg.data.name+' disconnected');
-		case 'chat':
-			return this.log(msg.data.name+' >> '+msg.data.data);
-			break;
-		default:
-			return console.error('unrecognized websocket event:'+msg.event+' data:'+JSON.stringify(msg.data));
-		}
-	}
+	var self = this;
 
-	this.connect = function(channel, name) {
-		window.console && console.log('connect(',channel,',',name,')');
+	this.connect = function() {
+		var server = document.querySelector('#server').value;
+		var channel = document.querySelector('#channel').value;
+		var name = document.querySelector('#name').value;
+		var transportLayer = 'ws';
+	
+		window.console && console.log('connect(',server,',',channel,',',name,')');
 
-		if(this.socket && this.socket.readyState<3) {
+		if(this.socket) {
+			this.socket.close();
 			delete this.socket;
 			this.socket = null;
 		}
 		if(!navigator.onLine) {
-			app.status('no internet connection');
-			setTimeout(function() { app.connect(chanel, name); }, 4000);
+			this.status('no internet connection');
+			setTimeout(function() { self.connect(); }, 4000);
 			return;
 		}
 		this.status("connecting...");
-		var socket = this.socket = new WebSocket(
-			'ws://' + cfg.baseUrl +'/'+channel+'?name='+encodeURIComponent(name));
-		socket.onmessage = function(msg) { app.handleServerMessage(msg.data); }
-		socket.onerror = function(evt) {
-			this.status = 'error';
-			if(app.socket!=this)
-				return;
-			delete app.socket;
-			app.socket = null;
-			app.status("server not reachable");
-			document.querySelector('#btn_connect').style.display='';
-			document.querySelector('#btn_disconnect').style.display='none';
-		}
-		socket.onopen = function(evt) {
-			if(app.socket!=this)
-				return;
+		var socket = this.socket = new EventSocket(
+			transportLayer+'://' + server +'/'+channel+'?name='+encodeURIComponent(name));
+	
+		socket.on('connect', function(data) {
+			self.log(data.name+' connected. peers:'+JSON.stringify(data.peers));
+		});
+		socket.on('disconnect', function(data) {
+			self.log(data.name+' disconnected.');
+		});
+		socket.on('chat', function(data) {
+			self.log(data.name+' >> '+data.data);
+		});
+		socket.on('*', function(data, event) {
+			console.error('unrecognized websocket event:'+event+' data:'+JSON.stringify(data));
+		});
+		socket.on('open', function(data) {
 			document.querySelector('#btn_connect').style.display='none';
 			document.querySelector('#btn_disconnect').style.display='';
-			app.status("connected.");
-		}
-		socket.onclose = function(evt) {
-			if(app.socket!=this)
-				return;
-			if(this.status!='error')
-				app.status("connection closed.");
-			delete app.socket;
-			app.socket = null;
-		}
+			self.status("connected.");
+		});
+		socket.on('close', function(data) {
+			var msg = "connection "+data.status+'.';
+			if(data.code>1000)
+				msg += ' code:'+data.code;
+			if(data.reason)
+				msg +=  " reason:"+data.reason;
+			self.status(msg);
+			delete self.socket;
+			self.socket = null;
+			document.querySelector('#btn_connect').style.display='';
+			document.querySelector('#btn_disconnect').style.display='none';
+		});
 	}
 	this.disconnect = function() {
 		window.console && console.log('disconnect()');
@@ -98,19 +94,17 @@ function App(cfg) {
 
 		if(!this.socket)
 			return;
-		if(this.socket.readyState==1)
+		if(this.socket.status=='open')
 			this.socket.close();
+		delete this.socket();
+		this.socket = null;
 		this.status('disconnected');
 	}
-	this.sendEvent = function(event, data) {
-		if(!this.socket||!event || this.socket.readyState!=1)
+	this.chat = function(msg) {
+		if(!this.socket|| this.socket.status!='open')
 			return false;
-		var msg = { event:event };
-		if(data!==undefined)
-			msg.data = data;
-		msg = JSON.stringify(msg);
 		console.log('>> '+msg);
-		this.socket.send(msg);
+		this.socket.send('chat', msg);
 		return true;
 	}
 	this.log = function(str) {
@@ -133,7 +127,7 @@ ui = {
 			event = window.event;
 		var key=event.keyCode || event.which;
 		if(key==13) { // enter
-			if(app) app.sendEvent('chat', value);
+			if(app) app.chat(value);
 			document.getElementById("input").value = '';
 		}
 	}
@@ -141,6 +135,7 @@ ui = {
 
 app = null;
 window.onload = function() {
+	document.getElementById('server').value = cfg.server;
 	if(localStorage && localStorage.chat) {
 		var settings = JSON.parse(localStorage.chat);
 		for(var key in settings) {
@@ -150,7 +145,6 @@ window.onload = function() {
 		}
 	}
 	app = new App(cfg);
-	
 }
 window.onunload = function() {
 	if(app)
@@ -162,17 +156,19 @@ window.onunload = function() {
 
 	<body>
 		<div id="paneForm">
+			<label for="server">server</label>
+			<input type="text" id="server"/>
 			<label for="channel">channel</label>
 			<input type="text" id="channel"/>
 			<label for="name">nick name</label>
 			<input type="text" id="name"/>
 			<div>
-				<button id="btn_connect" onclick="app.connect(document.querySelector('#channel').value, document.querySelector('#name').value)">connect</button>
+				<button id="btn_connect" onclick="app.connect()">connect</button>
 				<button id="btn_disconnect" style="display:none;" onclick="app.disconnect()">disconnect</button>
 				<span id="status"></span>
 			</div>
 			<label for="input">input</label>
-			<input type="text" id="input" onchange="app.sendEvent('chat', this.value);" onkeypress="ui.onMsgKeyPress(event, this.value);" value=""/>
+			<input type="text" id="input" onchange="app.chat(this.value);" onkeypress="ui.onMsgKeyPress(event, this.value);" value=""/>
 			<label for="output">output</label>
 			<div id="output" style="border:1px silver solid;height:16em; overflow:scroll;"></div>
 		</div>

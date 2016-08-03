@@ -3,9 +3,18 @@ var http = require('http');
 var urllib = require('url');
 var WebSocketServer = require('ws').Server;
 
-var server_ip_address = process.env.OPENSHIFT_NODEJS_IP || '0.0.0.0';
-var server_port = process.env.OPENSHIFT_NODEJS_PORT || 8888;
-var isOpenshift = (process.env.OPENSHIFT_NODEJS_IP!=null);
+var cfg = {
+	ip: process.env.OPENSHIFT_NODEJS_IP || '0.0.0.0',
+	port:	process.env.OPENSHIFT_NODEJS_PORT || 8888,
+	isOpenshift: (process.env.OPENSHIFT_NODEJS_IP!=null),
+	allowOrigin: [
+		'http://localhost', 
+		'http://chat-eludi.rhcloud.com',
+		'http://rtc-eludi.rhcloud.com',
+		'http://eludi.net',
+		'http://5.135.159.179',
+	]
+};
 
 function serveStatic(resp, path, basePath) {
 	var inferMime = function(fname) {
@@ -58,15 +67,17 @@ var httpServer = http.createServer(function(req, resp) {
 	if(path.length && path[path.length-1]=='')
 		path.pop();
 	if(!path.length || path[0]=='index.html')
-		path = [ 'static', 'index.html' ];
-	var transportLayer = (req.connection.encrypted || (isOpenshift && req.headers['x-forwarded-proto']=='https')) ? 'https' : 'http';
+		path = [ 'static', 'chat.html' ];
+	var transportLayer = (req.connection.encrypted || (cfg.isOpenshift && req.headers['x-forwarded-proto']=='https')) ? 'https' : 'http';
 	console.log(transportLayer, '>>', req.url);
 
 	switch(path[0]) { // toplevel services:
-	case 'hello':;
+	case 'hello':
 		resp.writeHead(200, {'Content-Type': 'text/plain'});
 		resp.end('Hello, world.\n');
 		return;
+	case 'chat':
+		return serveStatic(resp, 'chat.html', __dirname+'/static');
 	case 'static':
 		if(path.length==2)
 			return serveStatic(resp, path[1], __dirname+'/'+path[0]);
@@ -79,19 +90,26 @@ var httpServer = http.createServer(function(req, resp) {
 		resp.end("Not Found");
 	}, 1000);
 });
-httpServer.listen(server_port, server_ip_address, function () {
-	console.log( "Listening on " + server_ip_address + ":" + server_port )
+httpServer.listen(cfg.port, cfg.ip, function () {
+	console.log( "Listening on " + cfg.ip + ":" + cfg.port )
 });
 
 
 // ----------------------------------------------------------------------------------------
 
 function verifyClient(info) {
-	console.log('client \n\torigin:', info.origin, '\n\tsecure:', info.secure,
+	console.log('client \n\torigin:', info.origin,
+		'\n\tsecure:', info.secure,
 		'\n\tuser-agent:', info.req.headers["user-agent"],
 		'\n\thost:', info.req.headers.host,
 		'\n\turl:', info.req.url);
-	return true;
+
+	var verified = false;
+	for(var i=0, end=cfg.allowOrigin.length; i<end && !verified; ++i)
+		if(info.origin.indexOf(cfg.allowOrigin[i])==0)
+			verified = true;
+	console.log(verified? '\t-> accepted':'\t-> rejected');
+	return verified;
 }
 
 // Create a server for handling websocket calls
@@ -127,6 +145,7 @@ wss.on('connection', function(ws) {
 	ws.on('message', function(msg) {
 		console.log('ws',this.path, this.name,'>>', msg);
 		msg = JSON.parse(msg);
+
 		var evt = msg.event;
 		delete msg.event;
 		msg.name = this.name;
