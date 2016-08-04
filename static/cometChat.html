@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		<title>eludi comet chat</title>
+		<meta name="author" content="Gerald Franz"/>
+		<meta name="keywords" content="eludi, chat"/>
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="viewport" content="user-scalable=no, width=device-width" />
+		<style type="text/css">
+body {
+	font-family:sans-serif;
+}
+#paneForm {
+	max-width:960px;
+	margin:0 auto;
+}
+#paneForm input {
+	box-sizing: border-box; -webkit-box-sizing: border-box; -moz-box-sizing: border-box;
+	width:100%;
+	margin: 0 0 0.2em 0;
+}
+#paneForm label {
+	font-size:71%;
+	font-weight:bold;
+}
+		</style>
+
+		<script type="text/javascript" src="/static/CometSocket.js"></script>
+		<script type="text/javascript">
+app = {
+	socket: null,
+
+	connect: function(channel, name) {
+		window.console && console.log('connect(',channel,',',name,')');
+
+		if(this.socket)
+			this.socket.close();
+
+		this.log('connecting... ', true);
+		var socket = this.socket = new CometSocket('/chat', {channel:channel, name:name});
+		socket.on('open', function(evt) {
+			document.querySelector('#btn_connect').style.display='none';
+			document.querySelector('#btn_disconnect').style.display='';
+			app.log("connected to channel "+channel);
+		});
+		socket.on('welcome', function(evt) {
+			app.log("peers: "+JSON.stringify(evt.peers));
+		});
+		socket.on('error', function(evt) {
+			if(evt.code==0 || evt.code==118) { // connection timeout / lost
+				if(window.confirm('Connection lost. Retry?')) {
+					socket.poll();
+					return true;
+				}
+			}
+			app.error(evt.code, evt.error);
+		});
+		socket.on('close', function(evt) {
+			app.log('connection closed');
+		});
+		socket.on('connect', function(evt) {
+			app.log(evt.name+' connected');
+		});
+		socket.on('disconnect', function(evt) {
+			app.log(evt.name+' disconnected');
+		});
+		socket.on('chat', function(evt) {
+			app.log(evt.name+' >> '+evt.message);
+		});
+		socket.on('present', function(evt) {
+			app.log(evt.name+(evt.message ? ' present' : ' not present'));
+		});
+	},
+	disconnect: function() {
+		window.console && console.log('disconnect()');
+		document.querySelector('#btn_connect').style.display='';
+		document.querySelector('#btn_disconnect').style.display='none';
+
+		if(!this.socket)
+			return;
+		this.socket.close();
+		this.socket = null;
+	},
+	send: function(msg) {
+		if(!this.socket||!msg.length)
+			return;
+		window.console && console.log('send(',msg,')');
+		this.socket.emit('chat', msg);
+	},
+	log: function(msg, overwrite) {
+		ui.log(msg, overwrite);
+	},
+	error: function(code, msg) {
+		var info = 'ERROR '+code;
+		if(msg)
+			info += ' '+msg;
+		this.log(info);
+	}
+}
+
+ui = {
+	onMsgKeyPress: function(event, value) {
+		if (!event)
+			event = window.event;
+		var key=event.keyCode || event.which;
+		if(key==13) { // enter
+			app.send(value);
+			document.getElementById("input").value = '';
+		}
+	},
+	log: function(msg, overwrite) {
+		window.console && console.log(msg);
+		var oldContent = document.getElementById("output").innerHTML;
+		if(this.log.overwrite)
+			oldContent = oldContent.substr(oldContent.indexOf('\n')+1);
+		document.getElementById("output").innerHTML = msg +'<br/>\n' + oldContent;
+		this.log.overwrite = overwrite;
+	}
+}
+
+window.onload = function() {
+	if(localStorage && localStorage.comet) {
+		var settings = JSON.parse(localStorage.comet);
+		for(var key in settings) {
+			var v = settings[key];
+			document.getElementById(key).value = (typeof v == 'object') ? JSON.stringify(v) : v;
+		}
+	}
+}
+window.onunload = function() {
+	if(app.socket)
+		app.socket.close();
+}
+
+		</script>
+	</head>
+	<body>
+		<div id="paneForm">
+			<label for="channel">channel</label>
+			<input type="text" id="channel"/>
+			<label for="name">nick name</label>
+			<input type="text" id="name"/>
+			<div>
+				<button id="btn_connect" onclick="app.connect(document.querySelector('#channel').value, document.querySelector('#name').value)">connect</button>
+				<button id="btn_disconnect" style="display:none;" onclick="app.disconnect()">disconnect</button>
+			</div>
+			<label for="input">input</label>
+			<input type="text" id="input" onchange="app.send(this.value);" onkeypress="ui.onMsgKeyPress(event, this.value);" value=""/>
+			<label for="output">output</label>
+			<div id="output" style="border:1px silver solid;height:16em; overflow:scroll;"></div>
+		</div>
+	</body>
+</html>
+

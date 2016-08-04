@@ -96,7 +96,7 @@ function App(cfg) {
 			return;
 		if(this.socket.status=='open')
 			this.socket.close();
-		delete this.socket();
+		delete this.socket;
 		this.socket = null;
 		this.status('disconnected');
 	}
@@ -104,7 +104,7 @@ function App(cfg) {
 		if(!this.socket|| this.socket.status!='open')
 			return false;
 		console.log('>> '+msg);
-		this.socket.send('chat', msg);
+		this.socket.emit('chat', msg);
 		return true;
 	}
 	this.log = function(str) {

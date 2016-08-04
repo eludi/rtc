@@ -1,6 +1,6 @@
 // a websocket that is capable of transferring structured events
 function EventSocket(url) {
-	this.send = function(event, data) {
+	this.emit = function(event, data) {
 		if(!event || !this.socket||this.socket.readyState!=1)
 			return false;
 		var msg = { event:event };

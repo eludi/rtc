@@ -2,6 +2,7 @@ var fs = require('fs');
 var http = require('http');
 var urllib = require('url');
 var WebSocketServer = require('ws').Server;
+//var CometSocketServer = require('./CometSocketServer');
 
 var cfg = {
 	ip: process.env.OPENSHIFT_NODEJS_IP || '0.0.0.0',
@@ -67,7 +68,7 @@ var httpServer = http.createServer(function(req, resp) {
 	if(path.length && path[path.length-1]=='')
 		path.pop();
 	if(!path.length || path[0]=='index.html')
-		path = [ 'static', 'chat.html' ];
+		path = [ 'static', 'wsChat.html' ];
 	var transportLayer = (req.connection.encrypted || (cfg.isOpenshift && req.headers['x-forwarded-proto']=='https')) ? 'https' : 'http';
 	console.log(transportLayer, '>>', req.url);
 
@@ -76,8 +77,6 @@ var httpServer = http.createServer(function(req, resp) {
 		resp.writeHead(200, {'Content-Type': 'text/plain'});
 		resp.end('Hello, world.\n');
 		return;
-	case 'chat':
-		return serveStatic(resp, 'chat.html', __dirname+'/static');
 	case 'static':
 		if(path.length==2)
 			return serveStatic(resp, path[1], __dirname+'/'+path[0]);
@@ -116,19 +115,19 @@ function verifyClient(info) {
 var wss = new WebSocketServer({server: httpServer, verifyClient:verifyClient});
 wss.channels = { };
 
-wss.on('connection', function(ws) {
+wss.on('connection', function(socket) {
 	var server = this;
-	
-	var url = urllib.parse(ws.upgradeReq.url, true);
-	var channelKey = ws.path = url.pathname.substr(1);
+
+	var url = urllib.parse(socket.upgradeReq.url, true);
+	var channelKey = socket.path = url.pathname.substr(1);
 	console.log('connect path:',channelKey, 'params:', url.query);
 	if(!('name' in url.query)) {
 		console.error('socket rejected. name parameter required');
-		return ws.destroy();
+		return socket.destroy();
 	}
-	var name = ws.name = url.query.name;
+	var name = socket.name = url.query.name;
 
-	ws.sendEvent = function(event, data) {
+	socket.sendEvent = function(event, data) {
 		var msg = { event:event };
 		if(data)
 			msg.data = data;
@@ -140,9 +139,9 @@ wss.on('connection', function(ws) {
 		channel = this.channels[channelKey];
 	else
 		channel = this.channels[channelKey] = [ ];
-	channel.push(ws);
+	channel.push(socket);
 
-	ws.on('message', function(msg) {
+	socket.on('message', function(msg) {
 		console.log('ws',this.path, this.name,'>>', msg);
 		msg = JSON.parse(msg);
 
@@ -152,7 +151,7 @@ wss.on('connection', function(ws) {
 		server.broadcast(this.path, evt, msg);
 	});
 
-	ws.on('close', function(code, msg) {
+	socket.on('close', function(code, msg) {
 		console.log('ws close', code, msg);
 		var channel = server.channels[this.path];
 		if(channel.length>1) {
