@@ -93,26 +93,27 @@ function parseArgs(args, defaults) {
 function Chat() {
 	var self = this;
 
-	this.connect = function(key, socket, name) {
+	this.connect = function(socket) {
 		socket.on('close', function(data, event) { 
-			self.broadcast(socket, data, event);
 			delete self.peers[socket.key];
+			self.broadcast(socket, 'disconnect', data);
 		});
-		socket.on('*', function(data, event) { self.broadcast(socket, data, event); });
+		socket.on('*', function(data, event) { self.broadcast(socket, event, data); });
 
-		this.peers[key] = socket;
+		this.peers[socket.key] = socket;
 
 		var peers = [];
 		for(var key in this.peers)
 			peers.push(this.peers[key].params.name);
 
-		socket.emit('welcome', { name:name, peers:peers });
+		this.broadcast(socket, 'connect', { peers:peers });
 	}
 
-	this.broadcast = function(socket, message, event) {
+	this.broadcast = function(socket, event, payload) {
+		payload.name = socket.params.name;
 		for(var key in this.peers) {
 			var peer = this.peers[key];
-			peer.emit(event, { name:socket.params.name, id:socket.key, message:message });
+			peer.emit(event, payload);
 		}
 	}
 
@@ -132,18 +133,17 @@ chatServer.chats = { };
 
 chatServer.on('connection', function(socket) {
 	var channel = socket.params.channel;
-	var name = socket.params.name;
 
 	var chat = chatServer.chats[channel];
 	if(!chat)
 		chat = chatServer.chats[channel] = new Chat();
-	chat.connect(socket.key, socket, name);
+	chat.connect(socket);
 });
 
 
 //------------------------------------------------------------------
 var settings = {
-	port:1771
+	port:8888
 }
 if(!parseArgs(process.argv.slice(2), settings))
 	process.exit(-1);
@@ -174,7 +174,7 @@ var server = exports.server = http.createServer(function(req, resp) {
 
 		// index.html
 		if(!path.length || path[0]=='index.html')
-			path = request.path = [ 'static', 'cometChat.html' ];
+			path = request.path = [ 'static', 'chat.html' ];
 
 		switch(path[0]) { // toplevel services:
 		case 'hello':

@@ -43,21 +43,26 @@ function CometSocket(url, params) {
 		if(typeof data=='object')
 			data = JSON.stringify(data);
 		var params = { event:event, data:data };
-		httpRequest(this.url, params, this._callback, 'POST');
+		var self = this;
+		httpRequest(this.url, params, function(value, status){ self._callback(value, status) }, 'POST');
 	}
-	this.close = function() {
+	this.close = function(code, reason) {
 		if(this.readyState != 1)
 			return;
-		this.emit('close');
+		var data = { code:(code===undefined) ? 1000 : code, reason: reason ? reason : '' };
+		this.emit('close', data);
+
 		this.readyState = 2;
+		this.status = 'closing';
 		if(this.pollRequest) {
 			this.pollRequest.abort();
 			this.pollRequest = null;
 		}
-		this.notify('close');
+		this.notify('close', data);
 		if(this.timeoutId)
 			clearTimeout(this.timeoutId);
 		this.readyState = 3;
+		this.status = 'closed';
 	}
 	this.on = function(event, callback) {
 		if(typeof callback=='function')
@@ -66,11 +71,11 @@ function CometSocket(url, params) {
 			this.callbacks[event]=null;
 	}
 	this.notify = function(event, data) {
-		if(event in this.callbacks) {
-			if(data && typeof data == 'string' && (data[0]=='{' || data[0]=='[' ))
-				data = JSON.parse(data);
-			this.callbacks[event](data);
-		}
+		if(event in this.callbacks)
+			return this.callbacks[event](data);
+		if('*' in this.callbacks)
+			return this.callbacks['*'](data, event);
+		return false;
 	}
 
 	this._callback = function(value, status) {
@@ -89,14 +94,10 @@ function CometSocket(url, params) {
 		}
 		else if(status==204) // ok, no response
 			return;
-		else if((status<=0 || status>=300) && ('error' in this.callbacks)) {
-			if(status==0) { // connection abort
-				value = {error:'connection lost'};
-			}
-			if(!this.callbacks['error']({ code:status, error:value.error }))
-				this.readyState = -1;
+		else if(status<=0 || status>=300) {
+			this._error(status, status ? value.error : 'connection lost');
 		}
-		else this.readyState = -1;
+		else console && console.error('unrecognized response code', status, value);
 	}
 	this._cbPoll = function(value, status) {
 		if(this.timeoutId) {
@@ -125,8 +126,7 @@ function CometSocket(url, params) {
 		this.pollRequest = null;
 		if(this.readyState<0 || this.readyState>1)
 			return;
-		this.notify('error', { code:118, error:"connection timeout" });
-		this.readyState = -1;
+		this._error(118, "connection timeout");
 	}
 	this._cbOpen = function(resp, status) {
 		if(this.readyState!=0)
@@ -137,6 +137,7 @@ function CometSocket(url, params) {
 		}
 		if(status==200) {
 			this.readyState = 1;
+			this.status = 'open';
 			var data = (status==204) ? null : (typeof resp =='string' && resp.length) ? JSON.parse(resp) : resp;
 			var key = data.key;
 			this.url += '/' + data.key;
@@ -144,16 +145,20 @@ function CometSocket(url, params) {
 			this.notify('open', data);
 			this.poll();
 		}
-		if(!this.readyState) {
-			this.notify('error', { code:status, error:resp.error });
-			this.readyState = -1;
-		}
+		if(!this.readyState)
+			this._error(status, resp.error );
+	}
+	this._error = function(code, error) {
+		this.notify('error', { code:status, error:error });
+		this.status = 'error';
+		this.close(1006, 'error '+code+' '+error);
 	}
 	//--- constructor ---
 	this.url = null;
 	this.channel = channel
 	this.rowid=0;
 	this.readyState = 0; // 0 == CONNECTING, 1 == OPEN, 2 == CLOSING, 3 == CLOSED
+	this.status = 'connecting';
 	this.callbacks = { };
 	this.pollRequest = null;
 	this.timeout = 30*1000;

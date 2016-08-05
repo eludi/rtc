@@ -68,7 +68,7 @@ var httpServer = http.createServer(function(req, resp) {
 	if(path.length && path[path.length-1]=='')
 		path.pop();
 	if(!path.length || path[0]=='index.html')
-		path = [ 'static', 'wsChat.html' ];
+		path = [ 'static', 'chat.html' ];
 	var transportLayer = (req.connection.encrypted || (cfg.isOpenshift && req.headers['x-forwarded-proto']=='https')) ? 'https' : 'http';
 	console.log(transportLayer, '>>', req.url);
 
@@ -123,7 +123,7 @@ wss.on('connection', function(socket) {
 	console.log('connect path:',channelKey, 'params:', url.query);
 	if(!('name' in url.query)) {
 		console.error('socket rejected. name parameter required');
-		return socket.destroy();
+		return socket.terminate();
 	}
 	var name = socket.name = url.query.name;
 
@@ -146,9 +146,9 @@ wss.on('connection', function(socket) {
 		msg = JSON.parse(msg);
 
 		var evt = msg.event;
-		delete msg.event;
-		msg.name = this.name;
-		server.broadcast(this.path, evt, msg);
+		var data = msg.data;
+		data.name = this.name;
+		server.broadcast(this.path, evt, data);
 	});
 
 	socket.on('close', function(code, msg) {

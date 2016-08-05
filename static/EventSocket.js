@@ -1,5 +1,5 @@
 // a websocket that is capable of transferring structured events
-function EventSocket(url) {
+function EventSocket(url, params) {
 	this.emit = function(event, data) {
 		if(!event || !this.socket||this.socket.readyState!=1)
 			return false;
@@ -20,32 +20,45 @@ function EventSocket(url) {
 		else if(!callback)
 			this.callbacks[event]=null;
 	}
-	var self = this;
-	var notify = function(event, data) {
-		if(event in self.callbacks)
-			return self.callbacks[event](data, event);
-		if('*' in self.callbacks)
-			self.callbacks['*'](data, event);
+
+	this.notify = function(event, data) {
+		if(event in this.callbacks)
+			return this.callbacks[event](data, event);
+		if('*' in this.callbacks)
+			return this.callbacks['*'](data, event);
+		return false;
+	}
+	var encodeURI = function(obj) {
+		var s = '';
+		if(typeof obj == 'object') for(var key in obj) {
+			s += s.length ? '&' : '?';
+			var value = obj[key];
+			if(typeof value == 'object')
+				value = JSON.stringify(value);
+			s += key+'='+encodeURIComponent(value);
+		}
+		return s;
 	}
 
 	this.callbacks = { };
 	this.status = 'connecting';
 
-	var socket = this.socket = new WebSocket(url);
+	var self = this;
+	var socket = this.socket = new WebSocket(url+encodeURI(params));
 	socket.onmessage = function(msg) {
 		var data = JSON.parse(msg.data);
-		notify(data.event, data.data);
+		self.notify(data.event, data.data);
 	}
 	socket.onopen = function(evt) {
 		self.status = 'open';
-		notify(self.status);
+		self.notify(self.status);
 	}
 	socket.onclose = function(evt) {
 		self.status = (self.status=='connecting') ?'failed': evt.wasClean ? 'closed' : 'error';
 		var data = { code:evt.code, status:self.status };
 		if(evt.reason.length)
 			data.reason = evt.reason;
-		notify('close', data);
+		self.notify('close', data);
 		delete self.socket;
 		self.socket = null;
 	}

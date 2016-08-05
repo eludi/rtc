@@ -16,6 +16,7 @@ function respond(resp, code, body) {
 
 var sockets = { };
 var timeoutPresence = 4000;
+var timeoutClose = 25000;
 
 function Socket(key, params) {
 	this.key = key;
@@ -49,20 +50,20 @@ function Socket(key, params) {
 
 		var evt = { event:event };
 		if(data)
-			evt.data= (typeof data=='object') ? JSON.stringify(data) : data;
+			evt.data = data;
 
 		this.journal.push(evt);
 		if(this.request) {
 			respond(this.request.resp, 200, [evt]);
 			clearTimeout(this.request.timeout);
 			this.request = null;
-			this.expectReconnect(timeoutPresence);
+			this.expectReconnect(false);
 		}
 	}
-	this.close = function(reason) {
+	this.close = function(code, reason) {
 		if(this.readyState != 1)
 			return;
-		var data = reason ? { reason:reason } : null;
+		var data = { code:(code===undefined) ? 1000 : code, reason: reason ? reason : '' };
 		this.setPresent(false);
 		this.emit('close', data);
 		this.notify('close', data);
@@ -79,14 +80,22 @@ function Socket(key, params) {
 			return;
 		console.log('socket '+key+' PRESENT:', isPresent);
 		this.present = isPresent;
-		this.notify('present', isPresent);
+		this.notify('present', { state:isPresent });
+		if(!isPresent && this.readyState==1)
+			this.expectReconnect(true);
 	}
-	this.expectReconnect = function(deltaT) {
+	this.expectReconnect = function(closeSocket) {
+		var deltaT = closeSocket ? timeoutClose : timeoutPresence;
 		if(this.timeout)
 			clearTimeout(this.timeout);
 		var socket = this;
 		this.timeout = setTimeout(function() {
-			socket.setPresent(false);
+			if(closeSocket) {
+				if(socket.readyState==1)
+					socket.close(1004, 'reconnect timeout');
+			}
+			else
+				socket.setPresent(false);
 		}, deltaT);
 	}
 }
@@ -140,10 +149,10 @@ function Server(path, verifyClient) {
 			var rowid = req.params.rowid || socket.rowid;
 			if(socket.journal.length>rowid) { // direct response:
 				respond(resp, 200, socket.journal.slice(rowid));
-				socket.expectReconnect(timeoutPresence);
+				socket.expectReconnect(false);
 				return;
 			}
-			// initiate long polling:
+			// delay response:
 			var request = socket.request = { resp:resp, ip:req.ip, timestamp:req.timestamp };
 			var self = this;
 			request.timeout = setTimeout(function() {
@@ -151,7 +160,7 @@ function Server(path, verifyClient) {
 					return;
 				respond(resp, 204);
 				socket.request = null;
-				socket.expectReconnect(timeoutPresence);
+				socket.expectReconnect(false);
 			}, this.timeoutRequest);
 
 			resp.on('close', function() {

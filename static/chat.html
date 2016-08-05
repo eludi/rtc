@@ -2,7 +2,7 @@
 <html>
 	<head>
 		<meta charset="utf-8" />
-		<title>eludi websocket chat</title>
+		<title>eludi chat</title>
 		<meta name="author" content="Gerald Franz"/>
 		<meta name="keywords" content="eludi, chat"/>
 		<meta name="apple-mobile-web-app-capable" content="yes" />
@@ -16,7 +16,7 @@ body {
 	margin:0 auto;
 }
 #paneForm input {
-	box-sizing: border-box; -webkit-box-sizing: border-box; -moz-box-sizing: border-box;
+	box-sizing: border-box;
 	width:100%;
 	margin: 0 0 0.2em 0;
 }
@@ -24,12 +24,17 @@ body {
 	font-size:71%;
 	font-weight:bold;
 }
+#paneForm input[type='radio'] {
+	width:auto;
+	margin: 0 0.25em;
+}
 		</style>
 
+		<script type="text/javascript" src="/static/CometSocket.js"></script>
 		<script type="text/javascript" src="/static/EventSocket.js"></script>
 		<script type="text/javascript">
 cfg = {
-	server:location.hostname + ':'+ location.port,
+	server:location.hostname + ':'+ location.port
 }
 
 function App(cfg) {
@@ -39,8 +44,8 @@ function App(cfg) {
 		var server = document.querySelector('#server').value;
 		var channel = document.querySelector('#channel').value;
 		var name = document.querySelector('#name').value;
-		var transportLayer = 'ws';
-	
+		var socketMode = document.querySelector('input[name="socketMode"]:checked').value;
+
 		window.console && console.log('connect(',server,',',channel,',',name,')');
 
 		if(this.socket) {
@@ -54,9 +59,34 @@ function App(cfg) {
 			return;
 		}
 		this.status("connecting...");
-		var socket = this.socket = new EventSocket(
-			transportLayer+'://' + server +'/'+channel+'?name='+encodeURIComponent(name));
-	
+		var socket = this.socket = (socketMode =='ws')
+			? new EventSocket('ws://' + server +'/'+channel, {name:name})
+			: new CometSocket('/chat', {channel:channel, name:name});
+
+		// lifecycle events:
+		socket.on('open', function(data) {
+			document.querySelector('#btn_connect').style.display='none';
+			document.querySelector('#btn_disconnect').style.display='';
+			self.status("connected.");
+		});
+		socket.on('close', function(data) {
+			var msg = "connection closed.";
+			if(data.code>1000)
+				msg += ' code:'+data.code;
+			if(data.reason)
+				msg +=  " reason: "+data.reason;
+			self.status(msg);
+			delete self.socket;
+			self.socket = null;
+			document.querySelector('#btn_connect').style.display='';
+			document.querySelector('#btn_disconnect').style.display='none';
+		});
+		socket.on('error', function(data) {
+			self.status("error");
+			self.log('socket ERROR '+(data?JSON.stringify(data):''));
+		});
+
+		// chat events:
 		socket.on('connect', function(data) {
 			self.log(data.name+' connected. peers:'+JSON.stringify(data.peers));
 		});
@@ -64,29 +94,17 @@ function App(cfg) {
 			self.log(data.name+' disconnected.');
 		});
 		socket.on('chat', function(data) {
-			self.log(data.name+' >> '+data.data);
+			self.log(data.name+' >> '+data.message);
+		});
+		socket.on('present', function(data) {
+			app.log(data.name+(data.state ? ' present' : ' not present'));
 		});
 		socket.on('*', function(data, event) {
 			console.error('unrecognized websocket event:'+event+' data:'+JSON.stringify(data));
-		});
-		socket.on('open', function(data) {
-			document.querySelector('#btn_connect').style.display='none';
-			document.querySelector('#btn_disconnect').style.display='';
-			self.status("connected.");
-		});
-		socket.on('close', function(data) {
-			var msg = "connection "+data.status+'.';
-			if(data.code>1000)
-				msg += ' code:'+data.code;
-			if(data.reason)
-				msg +=  " reason:"+data.reason;
-			self.status(msg);
-			delete self.socket;
-			self.socket = null;
-			document.querySelector('#btn_connect').style.display='';
-			document.querySelector('#btn_disconnect').style.display='none';
+
 		});
 	}
+
 	this.disconnect = function() {
 		window.console && console.log('disconnect()');
 		document.querySelector('#btn_connect').style.display='';
@@ -104,7 +122,7 @@ function App(cfg) {
 		if(!this.socket|| this.socket.status!='open')
 			return false;
 		console.log('>> '+msg);
-		this.socket.emit('chat', msg);
+		this.socket.emit('chat', { message:msg });
 		return true;
 	}
 	this.log = function(str) {
@@ -163,6 +181,8 @@ window.onunload = function() {
 			<label for="name">nick name</label>
 			<input type="text" id="name"/>
 			<div>
+				<input type="radio" name="socketMode" value="ws" checked="checked">websocket</input>
+				<input type="radio" name="socketMode" value="comet">comet</input>
 				<button id="btn_connect" onclick="app.connect()">connect</button>
 				<button id="btn_disconnect" style="display:none;" onclick="app.disconnect()">disconnect</button>
 				<span id="status"></span>
