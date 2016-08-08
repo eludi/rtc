@@ -117,8 +117,10 @@ function Server(path, verifyClient) {
 
 	this.createSocket = function(req, url, resp) {
 		var protocol = (req.headers['x-forwarded-proto']=='https') ? 'https' : 'http';
-		var info = { req:req, secure:protocol=='https',
-			origin:protocol+'://'+(('x-forwarded-for' in req.headers) ? req.headers['x-forwarded-for'] : req.connection.remoteAddress) };
+		var origin = req.headers.origin || req.headers.referer || '';
+		var info = { req:req, secure:protocol=='https', origin:origin };
+		console.log(req.headers);
+
 		if(this.verifyClient && !this.verifyClient(info))
 			return respond(resp, 401, 'not authorized');
 
