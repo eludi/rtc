@@ -1,7 +1,7 @@
 
 function CometSocket(url, params) {
 
-	var httpRequest = function(url, params, callback, method) {
+	var httpRequest = function(url, params, callback) {
 		var encodeURI = function(obj) {
 			var s = '';
 			for(var key in obj) {
@@ -14,14 +14,12 @@ function CometSocket(url, params) {
 			return s;
 		}
 		var paramStr = encodeURI(params);
-		if((method!='POST') && params)
+		if(params)
 			url+='?'+paramStr;
 
 		var xhr = new XMLHttpRequest();
 		try {
-			xhr.open( method, url, true );
-			if((method=='POST') && params)
-				xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+			xhr.open( 'GET', url, true );
 			if(callback) xhr.onload = xhr.onerror = function(event) {
 				var status = (xhr.status===undefined) ? -1 : (xhr.status==1223) ? 204 : xhr.status;
 				var response = (xhr.status==-1 || xhr.status==204) ? null
@@ -29,7 +27,7 @@ function CometSocket(url, params) {
 					? JSON.parse(xhr.responseText) : xhr.responseText;
 				callback( response, status );
 			}
-			xhr.send( ((method=='POST') && params) ? paramStr : null );
+			xhr.send( null );
 		} catch(error) {
 			window.console && console.error(error);
 			return false;
@@ -44,7 +42,7 @@ function CometSocket(url, params) {
 			data = JSON.stringify(data);
 		var params = { event:event, data:data };
 		var self = this;
-		httpRequest(this.url, params, function(value, status){ self._callback(value, status) }, 'POST');
+		httpRequest(this.url, params, function(value, status){ self._callback(value, status) });
 	}
 	this.close = function(code, reason) {
 		if(this.readyState != 1)
@@ -115,7 +113,7 @@ function CometSocket(url, params) {
 		if(this.readyState<1 || this.readyState==3)
 			return;
 		var self = this;
-		var xhr = this.pollRequest = httpRequest(this.url, { rowid:this.rowid }, function(value,status) { self._cbPoll(value,status); }, 'GET');
+		var xhr = this.pollRequest = httpRequest(this.url, { rowid:this.rowid }, function(value,status) { self._cbPoll(value,status); });
 		if(this.timeoutId)
 			clearTimeout(this.timeoutId);
 		this.timeoutId = setTimeout(function() { self._cbTimeout(xhr); }, this.timeout);
@@ -165,6 +163,6 @@ function CometSocket(url, params) {
 	this.url = url;
 
 	var self = this;
-	var xhr = httpRequest(this.url, params, function(resp, status) { self._cbOpen(resp, status) }, 'POST');
+	var xhr = httpRequest(this.url, params, function(resp, status) { self._cbOpen(resp, status) });
 	this.timeoutId = setTimeout(function() { self._cbTimeout(xhr); }, this.timeout);
 }

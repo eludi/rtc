@@ -1,3 +1,5 @@
+var urllib = require('url');
+
 function respond(resp, code, body) {
 	var headers = { 'Cache-Control': 'no-cache, no-store, must-revalidate, proxy-revalidate', 'Pragma':'no-cache', 'Access-Control-Allow-Origin':'*' };
 	if(body) 
@@ -113,47 +115,52 @@ function Server(path, verifyClient) {
 		return s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4();
 	}
 
-	this.createSocket = function(req, resp) {
-		if(this.verifyClient && !this.verifyClient({ req: req }))
-			return respond(resp, 401);
+	this.createSocket = function(req, url, resp) {
+		var protocol = (req.headers['x-forwarded-proto']=='https') ? 'https' : 'http';
+		var info = { req:req, secure:protocol=='https',
+			origin:protocol+'://'+(('x-forwarded-for' in req.headers) ? req.headers['x-forwarded-for'] : req.connection.remoteAddress) };
+		if(this.verifyClient && !this.verifyClient(info))
+			return respond(resp, 401, 'not authorized');
 
 		var key = this.guid();
-		var socket = sockets[key] = new Socket(key, req.params);
+		var socket = sockets[key] = new Socket(key, url.query);
 		console.log("new socket", socket.key, socket.params);
 		this.notify('connection', socket);
 		return respond(resp, 200, { key:key });
 	}
 
 	this.handleRequest = function(req, resp) {
-		if(!req.path.length || req.path[0]!=this.path)
+		var url = urllib.parse(req.url, true);
+		if(url.pathname.indexOf(this.path)!=0)
 			return false;
-		if(req.path.length==1 && req.method=='POST')
-			return this.createSocket(req, resp);
 
-		if(req.path.length<2)
+		if(url.pathname.length==this.path.length)
+				return this.createSocket(req, url, resp);
+
+		var key = url.pathname.substr(this.path.length+1);
+		if(!key.length)
 			return respond(resp, 400, 'socket id required');
 
-		var key = req.path[1];
 		var socket = sockets[key];
 		if(!socket)
 			return respond(resp, 404, 'socket not found');
 
-		switch(req.method) {
-		case 'GET': {
+		var event = url.query.event;
+		if(!event) {
 			if(socket.request) {
 				socket.request.resp.end();
 				socket.request = null;
 			}
 
 			socket.setPresent(true);
-			var rowid = req.params.rowid || socket.rowid;
+			var rowid = url.query.rowid || socket.rowid;
 			if(socket.journal.length>rowid) { // direct response:
 				respond(resp, 200, socket.journal.slice(rowid));
 				socket.expectReconnect(false);
 				return;
 			}
 			// delay response:
-			var request = socket.request = { resp:resp, ip:req.ip, timestamp:req.timestamp };
+			var request = socket.request = { resp:resp, timestamp:req.timestamp };
 			var self = this;
 			request.timeout = setTimeout(function() {
 				if(!(key in sockets) || !socket.request)
@@ -164,26 +171,18 @@ function Server(path, verifyClient) {
 			}, this.timeoutRequest);
 
 			resp.on('close', function() {
-				console.log('connection abort by client', request.ip, request.timestamp);
+				console.log('connection abort by client', request.timestamp);
 				clearTimeout(request.timeout);
 				socket.request = null;
 				socket.setPresent(false);
 			});
-			break;
+			return;
 		}
-		case 'POST': {
-			var event = req.params.event;
-			if(!event)
-				return respond(resp, 400, 'event required');
-			if(event=='close')
-				socket.close('client disconnected');
-			else
-				socket.notify(event, req.params.data);
-			return respond(resp, 204);
-		}
-		default:
-			return respond(resp, 405, 'method not allowed');
-		}
+		else if(event=='close')
+			socket.close('client disconnected');
+		else
+			socket.notify(event, url.query.data);
+		return respond(resp, 204);
 	}
 	this.on = function(event, callback) {
 		if(typeof callback=='function')

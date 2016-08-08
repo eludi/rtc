@@ -59,9 +59,10 @@ function App(cfg) {
 			return;
 		}
 		this.status("connecting...");
+		var params = {channel:channel, name:name};
 		var socket = this.socket = (socketMode =='ws')
-			? new EventSocket('ws://' + server +'/'+channel, {name:name})
-			: new CometSocket('/chat', {channel:channel, name:name});
+			? new EventSocket('ws://' + server +'/'+channel, params)
+			: new CometSocket('/chat', params);
 
 		// lifecycle events:
 		socket.on('open', function(data) {
