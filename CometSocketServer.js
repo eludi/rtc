@@ -20,13 +20,14 @@ var sockets = { };
 var timeoutPresence = 4000;
 var timeoutClose = 25000;
 
-function Socket(key, params) {
+function EventSocketComet(key, params) {
 	this.key = key;
 	this.params = params;
+	this.callbacks = {};
+
 	this.journal = [];
 	this.rowid = 0;
 	this.request = null;
-	this.callbacks = {};
 	this.readyState = 1;
 	this.present = false;
 
@@ -125,7 +126,7 @@ function Server(path, verifyClient) {
 			return respond(resp, 401, 'not authorized');
 
 		var key = this.guid();
-		var socket = sockets[key] = new Socket(key, url.query);
+		var socket = sockets[key] = new EventSocketComet(key, url.query);
 		console.log("new socket", socket.key, socket.params);
 		this.notify('connection', socket);
 		return respond(resp, 200, { key:key });

@@ -107,29 +107,25 @@ function Chat() {
 
 	this.connect = function(socket) {
 		socket.on('close', function(data, event) { 
-			delete self.peers[socket.key];
+			self.peers.delete(socket.key);
 			self.broadcast(socket, 'disconnect', data);
 		});
 		socket.on('*', function(data, event) { self.broadcast(socket, event, data); });
 
-		this.peers[socket.key] = socket;
+		this.peers.set(socket.key, socket);
 
 		var peers = [];
-		for(var key in this.peers)
-			peers.push(this.peers[key].params.name);
+		this.peers.forEach(function(peer) { peers.push(peer.params.name); });
 
 		this.broadcast(socket, 'connect', { peers:peers });
 	}
 
 	this.broadcast = function(socket, event, payload) {
 		payload.name = socket.params.name;
-		for(var key in this.peers) {
-			var peer = this.peers[key];
-			peer.emit(event, payload);
-		}
+		this.peers.forEach(function(peer) { peer.emit(event, payload); });
 	}
 
-	this.peers = { };
+	this.peers = new Map();
 }
 
 function verifyClient(info) {
@@ -153,17 +149,73 @@ function verifyClient(info) {
 
 var chatServer = require('./CometSocketServer').createServer('/chat', verifyClient);
 
-chatServer.chats = { };
+chatServer.chats = new Map();
 
-chatServer.on('connection', function(socket) {
-	var channel = socket.params.channel;
-
-	var chat = chatServer.chats[channel];
-	if(!chat)
-		chat = chatServer.chats[channel] = new Chat();
+chatServer.connect = function(socket) {
+	var key = socket.params.channel;
+	var chat = this.chats.get(key);
+	if(!chat) {
+		chat = new Chat();
+		this.chats.set(key, chat);
+	}
 	chat.connect(socket);
-});
+}
+chatServer.collectGarbage = function() {
+	this.chats.forEach(function(chat, key, chats) { 
+		if(chat.peers.size)
+			return;
+		chats.delete(key);
+		console.log('channel', key, 'cleaned up.');
+	});
+}
+chatServer.gc = setInterval(function(self) { self.collectGarbage(); }, 10000, chatServer);
+chatServer.on('connection', function(socket) { chatServer.connect(socket); });
 
+//------------------------------------------------------------------
+function EventSocketWS(websocket, key, params) {
+	this.key = key;
+	this.params = params;
+	this.callbacks = {};
+	this.ws = websocket;
+
+	this.on = function(event, callback) {
+		if(typeof callback=='function')
+			this.callbacks[event]=callback; 
+		else if(!callback && this.callbacks[event])
+			delete this.callbacks[event];
+	}
+	this.notify = function(event, data) {
+		var callback = this.callbacks[event];
+		if(!callback)
+			callback = this.callbacks['*'];
+		if(!callback)
+			return;
+		if(data && typeof data == 'string' && (data[0]=='{' || data[0]=='[' ))
+			data = JSON.parse(data);
+		callback(data, event);
+	}
+	this.emit = function(event, data) {
+		var msg = { event:event };
+		if(data)
+			msg.data = data;
+		this.ws.send(JSON.stringify(msg));
+	}
+	this.close = function(code, reason) {
+		this.ws.close(code, reason);
+		this.notify('close', data);
+	}
+
+	var self = this;
+	websocket.on('message', function(msg) {
+		console.log('ws', self.params.name+'@'+self.key,'>>', msg);
+		msg = JSON.parse(msg);
+		self.notify(msg.event, msg.data);
+	});
+	websocket.on('close', function(code, reason) {
+		console.log('ws close', code, reason);
+		self.notify('close', { code:(code===undefined) ? 1000 : code, reason: reason ? reason : '' });
+	});
+}
 
 //------------------------------------------------------------------
 if(!parseArgs(process.argv.slice(2), cfg))
@@ -250,60 +302,13 @@ else {
 //------------------------------------------------------------------
 // Create a server for handling websocket calls
 var wss = new WebSocketServer({server: httpServer, verifyClient:verifyClient});
-wss.channels = { };
 
-wss.on('connection', function(socket) {
-	var server = this;
+wss.on('connection', function(ws) {
+	var url = urllib.parse(ws.upgradeReq.url, true);
+	var key = url.pathname.substr(1);
+	var params = url.query;
+	console.log('ws connect key:',key, 'params:', params);
 
-	var url = urllib.parse(socket.upgradeReq.url, true);
-	var channelKey = socket.key = url.pathname.substr(1);
-	socket.params = url.query;
-	console.log('ws connect key:',channelKey, 'params:', url.query);
-
-	socket.sendEvent = function(event, data) {
-		var msg = { event:event };
-		if(data)
-			msg.data = data;
-		this.send(JSON.stringify(msg));
-	}
-
-	var channel;
-	if(channelKey in this.channels)
-		channel = this.channels[channelKey];
-	else
-		channel = this.channels[channelKey] = [ ];
-	channel.push(socket);
-
-	socket.on('message', function(msg) {
-		console.log('ws', this.params.name+'@'+this.key,'>>', msg);
-		msg = JSON.parse(msg);
-
-		var evt = msg.event;
-		var data = msg.data;
-		data.name = this.params.name;
-		server.broadcast(this.key, evt, data);
-	});
-
-	socket.on('close', function(code, msg) {
-		console.log('ws close', code, msg);
-		var channel = server.channels[this.key];
-		if(channel.length>1) {
-			channel.splice(channel.indexOf(this),1);
-			server.broadcast(this.key, 'disconnect', { name:this.params.name });
-		}
-		else {
-			delete server.channels[this.key];
-			console.log('channel', this.key,'deleted');
-		}
-	});
-
-	var peers = [ ];
-	for(var i=0, end=channel.length ; i<end; ++i)
-		peers.push(channel[i].params.name);
-	server.broadcast(channelKey, 'connect', { name:socket.params.name, peers:peers });
+	var socket = new EventSocketWS(ws, key, params);
+	chatServer.connect(socket);
 });
-
-wss.broadcast = function(channel, event, data) {
-	for(var i in this.channels[channel])
-		this.clients[i].sendEvent(event, data);
-}
