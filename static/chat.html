@@ -41,12 +41,18 @@ function App(cfg) {
 	var self = this;
 
 	this.connect = function() {
-		var server = document.querySelector('#server').value;
-		var channel = document.querySelector('#channel').value;
-		var name = document.querySelector('#name').value;
-		var socketMode = document.querySelector('input[name="socketMode"]:checked').value;
+		cfg = {
+			server: document.querySelector('#server').value,
+			channel: document.querySelector('#channel').value,
+			name: document.querySelector('#name').value,
+			transmission: document.querySelector('input[name="transmission"]:checked').value
+		}
+		if(!cfg.server || !cfg.channel || !cfg.name)
+			return;
 
-		window.console && console.log('connect(',server,',',channel,',',name,')');
+		window.console && console.log('connect(',cfg,')');
+		if(localStorage)
+			localStorage.chat = JSON.stringify(cfg);
 
 		if(this.socket) {
 			this.socket.close();
@@ -59,10 +65,10 @@ function App(cfg) {
 			return;
 		}
 		this.status("connecting...");
-		var params = {channel:channel, name:name};
-		var socket = this.socket = (socketMode =='ws')
-			? new EventSocket('ws://' + server +'/'+channel, params)
-			: new CometSocket('http://'+server+'/chat', params);
+		var params = {channel:cfg.channel, name:cfg.name};
+		var socket = this.socket = (cfg.transmission =='ws')
+			? new EventSocket('ws://' + cfg.server +'/'+cfg.channel, params)
+			: new CometSocket('http://'+cfg.server+'/chat', params);
 
 		// lifecycle events:
 		socket.on('open', function(data) {
@@ -160,10 +166,20 @@ window.onload = function() {
 		for(var key in settings) {
 			var v = settings[key];
 			cfg[key] = v;
-			document.getElementById(key).value = (typeof v == 'object') ? JSON.stringify(v) : v;
+			if(key=='transmission') {
+				var elem = document.getElementById(key+'_'+v);
+				if(elem)
+					elem.checked = true;
+			}
+			else {
+				var elem = document.getElementById(key);
+				if(elem)
+					elem.value = (typeof v == 'object') ? JSON.stringify(v) : v;
+			}
 		}
 	}
 	app = new App(cfg);
+	app.connect();
 }
 window.onunload = function() {
 	if(app)
@@ -182,8 +198,8 @@ window.onunload = function() {
 			<label for="name">nick name</label>
 			<input type="text" id="name"/>
 			<div>
-				<input type="radio" name="socketMode" value="ws" checked="checked">websocket</input>
-				<input type="radio" name="socketMode" value="comet">comet</input>
+				<input type="radio" id="transmission_ws" name="transmission" value="ws" checked="checked">websocket</input>
+				<input type="radio" id="transmission_comet" name="transmission" value="comet">comet</input>
 				<button id="btn_connect" onclick="app.connect()">connect</button>
 				<button id="btn_disconnect" style="display:none;" onclick="app.disconnect()">disconnect</button>
 				<span id="status"></span>
