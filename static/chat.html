@@ -126,7 +126,7 @@ function App(cfg) {
 		this.status('disconnected');
 	}
 	this.chat = function(msg) {
-		if(!this.socket|| this.socket.status!='open')
+		if(!this.socket|| this.socket.status!='open'||!msg)
 			return false;
 		console.log('>> '+msg);
 		this.socket.emit('chat', { message:msg });

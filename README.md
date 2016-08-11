@@ -4,7 +4,6 @@ realtime communication services for HTML5 games
 
 ## TODO
 
-* CometSocket cleanup rows whose transmissal is already acknowledged (identified by rowid)
 * redirect on OpenShift from port 80 to port 8000
 * sometimes comet socket delivers an event twice -> add msgid, discard if too low?
 * try auto-reconnect when back online -> monitor connection by an interval timer?

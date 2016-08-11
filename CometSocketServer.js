@@ -26,7 +26,7 @@ function EventSocketComet(key, params) {
 	this.callbacks = {};
 
 	this.journal = [];
-	this.rowid = 0;
+	this.offset = 0;
 	this.request = null;
 	this.readyState = 1;
 	this.present = false;
@@ -60,21 +60,22 @@ function EventSocketComet(key, params) {
 			respond(this.request.resp, 200, [evt]);
 			clearTimeout(this.request.timeout);
 			this.request = null;
-			this.expectReconnect(false);
+			this._expectReconnect(false);
 		}
 	}
 	this.close = function(code, reason) {
 		if(this.readyState != 1)
 			return;
 		var data = { code:(code===undefined) ? 1000 : code, reason: reason ? reason : '' };
-		this.setPresent(false);
+		this._setPresent(false);
 		this.emit('close', data);
 		this.notify('close', data);
 		this.readyState = 2;
 		console.log('socket '+key+' closed, reason:', reason);
 		delete sockets[key];
 	}
-	this.setPresent = function(isPresent) {
+
+	this._setPresent = function(isPresent) {
 		if(this.timeout) {
 			clearTimeout(this.timeout);
 			delete this.timeout;
@@ -85,9 +86,9 @@ function EventSocketComet(key, params) {
 		this.present = isPresent;
 		this.notify('present', { state:isPresent });
 		if(!isPresent && this.readyState==1)
-			this.expectReconnect(true);
+			this._expectReconnect(true);
 	}
-	this.expectReconnect = function(closeSocket) {
+	this._expectReconnect = function(closeSocket) {
 		var deltaT = closeSocket ? timeoutClose : timeoutPresence;
 		if(this.timeout)
 			clearTimeout(this.timeout);
@@ -98,8 +99,23 @@ function EventSocketComet(key, params) {
 					socket.close(1004, 'reconnect timeout');
 			}
 			else
-				socket.setPresent(false);
+				socket._setPresent(false);
 		}, deltaT);
+	}
+	this._clearRequest = function() {
+		this.request.resp.end();
+		if(this.request.timeout)
+			clearTimeout(this.request.timeout);
+		this.request = null;
+	}
+	this._acknowledgeReceipt = function(rowid) {
+		if(rowid<=this.offset)
+			return;
+		if(rowid>this.offset+this.journal.length)
+			return console.error("CometSocket ERROR inconsistent acknowledge. rowid:",rowid, "offset:", this.offset, "journal.length:", this.journal.length);
+
+		this.journal = this.journal.slice(rowid-this.offset);
+		this.offset = rowid;
 	}
 }
 
@@ -149,19 +165,22 @@ function Server(path, verifyClient) {
 			return respond(resp, 404, 'socket not found');
 
 		var event = url.query.event;
-		if(!event) {
-			if(socket.request) {
-				socket.request.resp.end();
-				socket.request = null;
-			}
+		if(!event) { // new poll request
+			if(!('rowid' in url.query))
+				return respond(resp, 400, 'rowid required');
 
-			socket.setPresent(true);
-			var rowid = url.query.rowid || socket.rowid;
-			if(socket.journal.length>rowid) { // direct response:
-				respond(resp, 200, socket.journal.slice(rowid));
-				socket.expectReconnect(false);
+			if(socket.request)
+				socket._clearRequest();
+			socket._setPresent(true);
+			var rowid = Number(url.query.rowid);
+			socket._acknowledgeReceipt(rowid);
+
+			if(socket.journal.length) { // direct response:
+				respond(resp, 200, socket.journal);
+				socket._expectReconnect(false);
 				return;
 			}
+
 			// delay response:
 			var request = socket.request = { resp:resp, timestamp:req.timestamp };
 			var self = this;
@@ -170,14 +189,14 @@ function Server(path, verifyClient) {
 					return;
 				respond(resp, 204);
 				socket.request = null;
-				socket.expectReconnect(false);
+				socket._expectReconnect(false);
 			}, this.timeoutRequest);
 
 			resp.on('close', function() {
 				console.log('connection abort by client', request.timestamp);
 				clearTimeout(request.timeout);
 				socket.request = null;
-				socket.setPresent(false);
+				socket._setPresent(false);
 			});
 			return;
 		}
