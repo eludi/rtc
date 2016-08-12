@@ -40,7 +40,8 @@ function CometSocket(url, params) {
 			return;
 		if(typeof data=='object')
 			data = JSON.stringify(data);
-		var params = { event:event, data:data };
+		var params = { event:event, data:data, msgid:this.emitCounter };
+		++this.emitCounter;
 		var self = this;
 		httpRequest(this.url, params, function(value, status){ self._callback(value, status) });
 	}
@@ -154,7 +155,8 @@ function CometSocket(url, params) {
 	//--- constructor ---
 	this.url = null;
 	this.channel = channel
-	this.rowid=0;
+	this.rowid=0; // read counter
+	this.emitCounter = 0;
 	this.readyState = 0; // 0 == CONNECTING, 1 == OPEN, 2 == CLOSING, 3 == CLOSED
 	this.status = 'connecting';
 	this.callbacks = { };
