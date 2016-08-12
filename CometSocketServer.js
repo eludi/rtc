@@ -20,6 +20,15 @@ var sockets = { };
 var timeoutPresence = 4000;
 var timeoutClose = 25000;
 
+/// used for tracking if a message has already been dispatched
+function BitSet {
+	this.data = { }; // todo, make more memory efficient
+	this.get = function(idx) {
+		return (idx in this.data) ? true : false;
+	}
+	this.set(idx) { this.data[idx]=true; }
+}
+
 function EventSocketComet(key, params) {
 	this.key = key;
 	this.params = params;
@@ -30,6 +39,7 @@ function EventSocketComet(key, params) {
 	this.request = null;
 	this.readyState = 1;
 	this.present = false;
+	this.receivedMsg = new BitSet();
 
 	this.on = function(event, callback) {
 		if(typeof callback=='function')
@@ -37,7 +47,12 @@ function EventSocketComet(key, params) {
 		else if(!callback && this.callbacks[event])
 			delete this.callbacks[event];
 	}
-	this.notify = function(event, data) {
+	this.notify = function(event, data, msgid) {
+		if(msgid!==undefined) {
+			if(this.receivedMsg.get(msgid))
+				return;
+			this.receivedMsg.set(msgid);
+		}
 		var callback = this.callbacks[event];
 		if(!callback)
 			callback = this.callbacks['*'];
@@ -201,9 +216,9 @@ function Server(path, verifyClient) {
 			return;
 		}
 		else if(event=='close')
-			socket.close('client disconnected');
+			socket.close(url.query.code, url.query.reason);
 		else
-			socket.notify(event, url.query.data);
+			socket.notify(event, url.query.data, url.query.msgid);
 		return respond(resp, 204);
 	}
 	this.on = function(event, callback) {
