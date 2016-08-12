@@ -234,7 +234,9 @@ var httpServer = http.createServer(function(req, resp) {
 			params = url.query;
 
 		if(cfg.isOpenshift && url.port!=8000) { // redirect necessary for working websockets
-			resp.writeHead(301, { 'Location': 'http://'+url.hostname+':8000'+url.path+url.hash });
+			var redirect = 'http://'+url.hostname+':8000'+url.path+url.hash;
+			console.log(url,'->', redirect);
+			resp.writeHead(301, { 'Location': redirect });
 			return resp.end();
 		}
 
