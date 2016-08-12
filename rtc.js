@@ -233,6 +233,15 @@ var httpServer = http.createServer(function(req, resp) {
 		if(req.method!='POST')
 			params = url.query;
 
+		if(cfg.isOpenshift && req.headers['x-forwarded-port']!='8000') { // redirect necessary for working websockets
+			var redirect = 'http://'+req.headers['x-forwarded-host']+':8000'+url.path;
+			if(url.hash)
+				redirect += url.hash;
+			console.log(url,'->', redirect);
+			resp.writeHead(301, { 'Location': redirect });
+			return resp.end();
+		}
+
 		if(params.data && typeof params.data == 'string'
 			&& (params.data[0]=='{' || params.data[0]=='[' || params.data[0]=='"' ))
 			params.data = JSON.parse(params.data);
@@ -249,14 +258,6 @@ var httpServer = http.createServer(function(req, resp) {
 			timestamp: new Date().getTime()
 		};
 		console.log(JSON.stringify(request))
-
-		if(cfg.isOpenshift && url.port!=8000) { // redirect necessary for working websockets
-			var redirect = 'http://'+url.hostname+':8000'+url.path+url.hash;
-			console.log(req.headers);
-			console.log(url,'->', redirect);
-			resp.writeHead(301, { 'Location': redirect });
-			return resp.end();
-		}
 
 		// index.html
 		if(!path.length || path[0]=='index.html')
