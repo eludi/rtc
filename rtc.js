@@ -237,7 +237,7 @@ var httpServer = http.createServer(function(req, resp) {
 			var redirect = 'http://'+req.headers['x-forwarded-host']+':8000'+url.path;
 			if(url.hash)
 				redirect += url.hash;
-			console.log(url,'->', redirect);
+			console.log(req.url,'->', redirect);
 			resp.writeHead(301, { 'Location': redirect });
 			return resp.end();
 		}
