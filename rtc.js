@@ -9,14 +9,14 @@ var cfg = {
 	port:	process.env.OPENSHIFT_NODEJS_PORT || 8888,
 	isOpenshift: (process.env.OPENSHIFT_NODEJS_IP!=null),
 	allowOrigin: [
-		'http://127.0.0.1', 
-		'http://localhost', 
-		'http://chat-eludi.rhcloud.com',
 		'http://rtc-eludi.rhcloud.com',
 		'http://eludi.net',
 		'http://5.135.159.179',
+		'http://eludi.cygnus.uberspace.de',
+		'https://eludi.cygnus.uberspace.de',
 	],
 	delayedResponse: 1500, // delay impeding denial of service / brute force attacks
+	devMode: false,
 };
 
 
@@ -24,7 +24,7 @@ var cfg = {
 function respond(resp, code, body) {
 	var headers = { 'Cache-Control': 'no-cache, no-store, must-revalidate, proxy-revalidate', 'Pragma':'no-cache' };
 	headers['Access-Control-Allow-Origin']='*';
-	if(body) 
+	if(body)
 		headers['Content-Type']='application/json';
 	console.log('>>', code, body);
 	if(code==204) {
@@ -100,13 +100,20 @@ function parseArgs(args, settings) {
 	return true;
 }
 
+if(!parseArgs(process.argv.slice(2), cfg))
+	process.exit(-1);
+if(cfg.devMode) {
+	cfg.allowOrigin.push('http://127.0.0.1');
+	cfg.allowOrigin.push('http://localhost');
+}
+
 //--- chat server --------------------------------------------------
 
 function Chat() {
 	var self = this;
 
 	this.connect = function(socket) {
-		socket.on('close', function(data, event) { 
+		socket.on('close', function(data, event) {
 			self.peers.delete(socket.key);
 			self.broadcast(socket, 'disconnect', data);
 		});
@@ -161,7 +168,7 @@ chatServer.connect = function(socket) {
 	chat.connect(socket);
 }
 chatServer.collectGarbage = function() {
-	this.chats.forEach(function(chat, key, chats) { 
+	this.chats.forEach(function(chat, key, chats) {
 		if(chat.peers.size)
 			return;
 		chats.delete(key);
@@ -180,7 +187,7 @@ function EventSocketWS(websocket, key, params) {
 
 	this.on = function(event, callback) {
 		if(typeof callback=='function')
-			this.callbacks[event]=callback; 
+			this.callbacks[event]=callback;
 		else if(!callback && this.callbacks[event])
 			delete this.callbacks[event];
 	}
@@ -218,9 +225,6 @@ function EventSocketWS(websocket, key, params) {
 }
 
 //------------------------------------------------------------------
-if(!parseArgs(process.argv.slice(2), cfg))
-	process.exit(-1);
-
 var httpServer = http.createServer(function(req, resp) {
 	// parse request:
 	var params = {};
@@ -228,6 +232,12 @@ var httpServer = http.createServer(function(req, resp) {
 		var url = urllib.parse(req.url, true);
 		if(req.method!='POST')
 			params = url.query;
+
+		if(cfg.isOpenshift && url.port!=8000) { // redirect necessary for working websockets
+			res.writeHead(301, { 'Location': 'http://'+url.hostname+':8000'+url.path+url.hash });
+			return res.end();
+		}
+
 		if(params.data && typeof params.data == 'string'
 			&& (params.data[0]=='{' || params.data[0]=='[' || params.data[0]=='"' ))
 			params.data = JSON.parse(params.data);
@@ -235,9 +245,9 @@ var httpServer = http.createServer(function(req, resp) {
 		var path = url.pathname.substr(1).split('/');
 		if(path.length && path[path.length-1]=='')
 			path.pop();
-		var request = { 
-			path:path, 
-			params: params, 
+		var request = {
+			path:path,
+			params: params,
 			method:req.method,
 			protocol:(cfg.isOpenshift && req.headers['x-forwarded-proto']=='https') ? 'https' : 'http',
 			ip:('x-forwarded-for' in req.headers) ? req.headers['x-forwarded-for'] : req.connection.remoteAddress,
@@ -264,7 +274,7 @@ var httpServer = http.createServer(function(req, resp) {
 			respond(resp, 404, "Not Found");
 		}
 	}
-	if(req.method!='POST') 
+	if(req.method!='POST')
 		return handle();
 	var body = '';
 	req.on('data', function (data) {
