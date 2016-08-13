@@ -21,12 +21,21 @@ var timeoutPresence = 4000;
 var timeoutClose = 25000;
 
 /// used for tracking if a message has already been dispatched
-function BitSet() {
-	this.data = { }; // todo, make more memory efficient
+function MsgTracker() {
+	this.top = -1;
+	this.gaps = { };
 	this.get = function(idx) {
-		return (idx in this.data) ? true : false;
+		if(idx>this.top)
+			return false;
+		return (idx in this.gaps) ? false : true;
 	}
-	this.set = function(idx) { this.data[idx]=true; }
+	this.set = function(idx) {
+		if(idx<this.top)
+			delete this.gaps[idx];
+		else if(idx>this.top)
+			while(++this.top<idx)
+				this.gaps[this.top]=true;
+	}
 }
 
 function EventSocketComet(key, params) {
@@ -39,7 +48,7 @@ function EventSocketComet(key, params) {
 	this.request = null;
 	this.readyState = 1;
 	this.present = false;
-	this.receivedMsg = new BitSet();
+	this.receivedMsg = new MsgTracker();
 
 	this.on = function(event, callback) {
 		if(typeof callback=='function')
