@@ -109,10 +109,13 @@ if(cfg.devMode) {
 
 //--- chat server --------------------------------------------------
 
-function Chat() {
+function Chat(numPeersMax) {
 	var self = this;
 
 	this.connect = function(socket) {
+		if(this.peers.size>=this.numPeersMax)
+			return socket.close(1008, "too many peers");
+
 		socket.on('close', function(data, event) {
 			self.peers.delete(socket.key);
 			self.broadcast(socket, 'disconnect', data);
@@ -132,6 +135,7 @@ function Chat() {
 		this.peers.forEach(function(peer) { peer.emit(event, payload); });
 	}
 
+	this.numPeersMax = numPeersMax || Number.MAX_SAFE_INTEGER;
 	this.peers = new Map();
 }
 
@@ -162,7 +166,7 @@ chatServer.connect = function(socket) {
 	var key = socket.params.channel;
 	var chat = this.chats.get(key);
 	if(!chat) {
-		chat = new Chat();
+		chat = new Chat(socket.params.numPeersMax);
 		this.chats.set(key, chat);
 	}
 	chat.connect(socket);
@@ -209,7 +213,7 @@ function EventSocketWS(websocket, key, params) {
 	}
 	this.close = function(code, reason) {
 		this.ws.close(code, reason);
-		this.notify('close', data);
+		this.notify('close', {code:code, reason:reason});
 	}
 
 	var self = this;

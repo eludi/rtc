@@ -65,7 +65,7 @@ function App(cfg) {
 			return;
 		}
 		this.status("connecting...");
-		var params = {channel:cfg.channel, name:cfg.name};
+		var params = {channel:cfg.channel, name:cfg.name, numPeersMax:3};
 		var socket = this.socket = (cfg.transmission =='ws')
 			? new EventSocket('ws://' + cfg.server +'/'+cfg.channel, params)
 			: new CometSocket('http://'+cfg.server+'/chat', params);
