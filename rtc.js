@@ -107,9 +107,9 @@ if(cfg.devMode) {
 	cfg.allowOrigin.push('http://localhost');
 }
 
-//--- chat server --------------------------------------------------
+//--- p2p server ---------------------------------------------------
 
-function Chat(numPeersMax) {
+function P2PChannel(numPeersMax) {
 	var self = this;
 
 	this.connect = function(socket) {
@@ -158,29 +158,29 @@ function verifyClient(info) {
 }
 
 
-var chatServer = require('./CometSocketServer').createServer('/chat', verifyClient);
+var p2pServer = require('./CometSocketServer').createServer('/p2p', verifyClient);
 
-chatServer.chats = new Map();
+p2pServer.channels = new Map();
 
-chatServer.connect = function(socket) {
+p2pServer.connect = function(socket) {
 	var key = socket.params.channel;
-	var chat = this.chats.get(key);
-	if(!chat) {
-		chat = new Chat(socket.params.numPeersMax);
-		this.chats.set(key, chat);
+	var channel = this.channels.get(key);
+	if(!channel) {
+		channel = new P2PChannel(socket.params.numPeersMax);
+		this.channels.set(key, channel);
 	}
-	chat.connect(socket);
+	channel.connect(socket);
 }
-chatServer.collectGarbage = function() {
-	this.chats.forEach(function(chat, key, chats) {
-		if(chat.peers.size)
+p2pServer.collectGarbage = function() {
+	this.channels.forEach(function(channel, key, channels) {
+		if(channel.peers.size)
 			return;
-		chats.delete(key);
+		channels.delete(key);
 		console.log('channel', key, 'cleaned up.');
 	});
 }
-chatServer.gc = setInterval(function(self) { self.collectGarbage(); }, 10000, chatServer);
-chatServer.on('connection', function(socket) { chatServer.connect(socket); });
+p2pServer.gc = setInterval(function(self) { self.collectGarbage(); }, 10000, p2pServer);
+p2pServer.on('connection', function(socket) { p2pServer.connect(socket); });
 
 //------------------------------------------------------------------
 function EventSocketWS(websocket, key, params) {
@@ -273,8 +273,8 @@ var httpServer = http.createServer(function(req, resp) {
 			resp.write(JSON.stringify(request)+'\n');
 			resp.end('Hello, world.\n');
 			return;
-		case 'chat':
-			return chatServer.handleRequest(req, resp);
+		case 'p2p':
+			return p2pServer.handleRequest(req, resp);
 		case 'static':
 			if(path.length==2)
 				return serveStatic(resp, path[1], __dirname+'/'+path[0]);
@@ -328,5 +328,5 @@ wss.on('connection', function(ws) {
 	console.log('ws connect key:',key, 'params:', params);
 
 	var socket = new EventSocketWS(ws, key, params);
-	chatServer.connect(socket);
+	p2pServer.connect(socket);
 });

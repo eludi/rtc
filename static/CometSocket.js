@@ -46,7 +46,7 @@ function CometSocket(url, params) {
 		httpRequest(this.url, params, function(value, status){ self._callback(value, status) });
 	}
 	this.close = function(code, reason) {
-		if(this.readyState != 1)
+		if(this.readyState > 1)
 			return;
 		var data = { code:(code===undefined) ? 1000 : code, reason: reason ? reason : '' };
 		this.emit('close', data);

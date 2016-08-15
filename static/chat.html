@@ -68,29 +68,31 @@ function App(cfg) {
 		var params = {channel:cfg.channel, name:cfg.name, numPeersMax:3};
 		var socket = this.socket = (cfg.transmission =='ws')
 			? new EventSocket('ws://' + cfg.server +'/'+cfg.channel, params)
-			: new CometSocket('http://'+cfg.server+'/chat', params);
+			: new CometSocket('http://'+cfg.server+'/p2p', params);
 
 		// lifecycle events:
 		socket.on('open', function(data) {
 			document.querySelector('#btn_connect').style.display='none';
 			document.querySelector('#btn_disconnect').style.display='';
 			self.status("connected.");
+			self.delayReconnect = 1;
 		});
 		socket.on('close', function(data) {
-			var msg = "connection closed.";
-			if(data.code>1000)
+			var msg = "connection "+(data.code==1006 ? 'failed' : 'closed')+".";
+			if(data.code==1006) { // connection lost, try to reconnect
+				setTimeout(function() { app.connect(); }, app.delayReconnect*1000);
+				if(app.delayReconnect<app.delayReconnectMax)
+					app.delayReconnect*=2;
+			}
+			else if(data.code>1000)
 				msg += ' code:'+data.code;
 			if(data.reason)
-				msg +=  " reason: "+data.reason;
+				msg += " reason: "+data.reason;
 			self.status(msg);
 			delete self.socket;
 			self.socket = null;
 			document.querySelector('#btn_connect').style.display='';
 			document.querySelector('#btn_disconnect').style.display='none';
-		});
-		socket.on('error', function(data) {
-			self.status("error");
-			self.log('socket ERROR '+(data?JSON.stringify(data):''));
 		});
 
 		// chat events:
@@ -142,6 +144,8 @@ function App(cfg) {
 		document.querySelector('#status').innerHTML = str;
 	}
 
+	this.delayReconnect = 1;
+	this.delayReconnectMax = 8;
 	this.socket = null;
 	this.statusMsg = 'init';
 }
