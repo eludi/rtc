@@ -22,8 +22,8 @@ var cfg = {
 
 ///------------------------------------------------------------------
 function respond(resp, code, body) {
-	var headers = { 'Cache-Control': 'no-cache, no-store, must-revalidate, proxy-revalidate', 'Pragma':'no-cache' };
-	headers['Access-Control-Allow-Origin']='*';
+	var headers = { 'Cache-Control': 'no-cache, no-store, must-revalidate, proxy-revalidate', 'Pragma':'no-cache',
+		'Access-Control-Allow-Origin':'*' };
 	if(body)
 		headers['Content-Type']='application/json';
 	console.log('>>', code, body);
@@ -164,6 +164,7 @@ p2pServer.channels = new Map();
 
 p2pServer.connect = function(socket) {
 	var key = socket.params.channel;
+	console.log('p2pServer.connect', key, this.channels.has(key), this.channels.get(key));
 	var channel = this.channels.get(key);
 	if(!channel) {
 		channel = new P2PChannel(socket.params.numPeersMax);
@@ -183,12 +184,17 @@ p2pServer.gc = setInterval(function(self) { self.collectGarbage(); }, 10000, p2p
 p2pServer.on('connection', function(socket) { p2pServer.connect(socket); });
 
 //------------------------------------------------------------------
-function EventSocketWS(websocket, key, params) {
-	this.key = key;
+function EventSocketWS(websocket, params) {
 	this.params = params;
 	this.callbacks = {};
 	this.ws = websocket;
-
+	this.key = (function() {
+		var s4 = function() {
+			return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+		}
+		return s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4();
+	})();
+		
 	this.on = function(event, callback) {
 		if(typeof callback=='function')
 			this.callbacks[event]=callback;
@@ -218,7 +224,7 @@ function EventSocketWS(websocket, key, params) {
 
 	var self = this;
 	websocket.on('message', function(msg) {
-		console.log('ws', self.params.name+'@'+self.key,'>>', msg);
+		console.log('ws', self.params.name+'@'+self.params.channel,'>>', msg);
 		msg = JSON.parse(msg);
 		self.notify(msg.event, msg.data);
 	});
@@ -323,10 +329,9 @@ var wss = new WebSocketServer({server: httpServer, verifyClient:verifyClient});
 
 wss.on('connection', function(ws) {
 	var url = urllib.parse(ws.upgradeReq.url, true);
-	var key = url.pathname.substr(1);
 	var params = url.query;
-	console.log('ws connect key:',key, 'params:', params);
+	console.log('ws connect params:', params);
 
-	var socket = new EventSocketWS(ws, key, params);
+	var socket = new EventSocketWS(ws, params);
 	p2pServer.connect(socket);
 });

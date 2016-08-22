@@ -154,7 +154,6 @@ function CometSocket(url, params) {
 	}
 	//--- constructor ---
 	this.url = null;
-	this.channel = channel
 	this.rowid=0; // read counter
 	this.emitCounter = 0;
 	this.readyState = 0; // 0 == CONNECTING, 1 == OPEN, 2 == CLOSING, 3 == CLOSED
