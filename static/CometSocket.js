@@ -57,7 +57,7 @@ function CometSocket(url, params) {
 			this.pollRequest.abort();
 			this.pollRequest = null;
 		}
-		this.notify('close', data);
+		this._notify('close', data);
 		if(this.timeoutId)
 			clearTimeout(this.timeoutId);
 		this.readyState = 3;
@@ -67,9 +67,9 @@ function CometSocket(url, params) {
 		if(typeof callback=='function')
 			this.callbacks[event]=callback; 
 		else if(!callback)
-			this.callbacks[event]=null;
+			delete this.callbacks[event];
 	}
-	this.notify = function(event, data) {
+	this._notify = function(event, data) {
 		if(event in this.callbacks)
 			return this.callbacks[event](data);
 		if('*' in this.callbacks)
@@ -87,7 +87,7 @@ function CometSocket(url, params) {
 			else input = value;
 			for(var i=0; i<input.length; ++i) {
 				var msg = input[i];
-				this.notify(msg.event, msg.data);
+				this._notify(msg.event, msg.data);
 			}
 			this.rowid += input.length;
 		}
@@ -141,14 +141,14 @@ function CometSocket(url, params) {
 			var key = data.key;
 			this.url += '/' + data.key;
 			window.console && console.log('socket key obtained:', key);
-			this.notify('open', data);
+			this._notify('open', data);
 			this.poll();
 		}
 		if(!this.readyState)
 			this._error(status, resp.error );
 	}
 	this._error = function(code, error) {
-		this.notify('error', { code:status, error:error });
+		this._notify('error', { code:status, error:error });
 		this.status = 'error';
 		this.close(1006, 'error '+code+' '+error);
 	}

@@ -10,6 +10,7 @@ var cfg = {
 	isOpenshift: (process.env.OPENSHIFT_NODEJS_IP!=null),
 	allowOrigin: [
 		'http://rtc-eludi.rhcloud.com',
+		'https://rtc-eludi.rhcloud.com',
 		'http://eludi.net',
 		'http://5.135.159.179',
 		'http://eludi.cygnus.uberspace.de',
@@ -243,13 +244,15 @@ var httpServer = http.createServer(function(req, resp) {
 		if(req.method!='POST')
 			params = url.query;
 
-		if(cfg.isOpenshift && req.headers['x-forwarded-port']!='8000') { // redirect necessary for working websockets
-			var redirect = 'http://'+req.headers['x-forwarded-host']+':8000'+url.path;
-			if(url.hash)
-				redirect += url.hash;
-			console.log(req.url,'->', redirect);
-			resp.writeHead(301, { 'Location': redirect });
-			return resp.end();
+		if(cfg.isOpenshift) {
+			if(req.headers['x-forwarded-port']!='8000' && req.headers['x-forwarded-port']!='8443') { // redirect necessary for working websockets
+				var redirect = 'https://'+req.headers['x-forwarded-host']+':8443'+url.path;
+				if(url.hash)
+					redirect += url.hash;
+				console.log(req.url,'->', redirect);
+				resp.writeHead(301, { 'Location': redirect });
+				return resp.end();
+			}
 		}
 
 		if(params.data && typeof params.data == 'string'

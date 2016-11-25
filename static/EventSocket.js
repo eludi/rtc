@@ -12,16 +12,16 @@ function EventSocket(url, params) {
 	}
 	this.close = function(code, reason) {
 		if(this.socket)
-			this.socket.close(code, reason);
+			this.socket.close(code ? code : 1000, reason);
 	}
 	this.on = function(event, callback) {
 		if(typeof callback=='function')
-			this.callbacks[event]=callback; 
+			this.callbacks[event]=callback;
 		else if(!callback)
-			this.callbacks[event]=null;
+			delete this.callbacks[event];
 	}
 
-	this.notify = function(event, data) {
+	this._notify = function(event, data) {
 		if(event in this.callbacks)
 			return this.callbacks[event](data, event);
 		if('*' in this.callbacks)
@@ -47,18 +47,18 @@ function EventSocket(url, params) {
 	var socket = this.socket = new WebSocket(url+encodeURI(params));
 	socket.onmessage = function(msg) {
 		var data = JSON.parse(msg.data);
-		self.notify(data.event, data.data);
+		self._notify(data.event, data.data);
 	}
 	socket.onopen = function(evt) {
 		self.status = 'open';
-		self.notify(self.status);
+		self._notify(self.status);
 	}
 	socket.onclose = function(evt) {
 		self.status = (self.status=='connecting') ?'failed': evt.wasClean ? 'closed' : 'error';
 		var data = { code:evt.code, status:self.status };
 		if(evt.reason.length)
 			data.reason = evt.reason;
-		self.notify('close', data);
+		self._notify('close', data);
 		delete self.socket;
 		self.socket = null;
 	}
