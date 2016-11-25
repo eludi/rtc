@@ -333,8 +333,11 @@ var wss = new WebSocketServer({server: httpServer, verifyClient:verifyClient});
 wss.on('connection', function(ws) {
 	var url = urllib.parse(ws.upgradeReq.url, true);
 	var params = url.query;
-	console.log('ws connect params:', params);
+	console.log('ws connect path:', url.pathname, 'params:', params);
 
 	var socket = new EventSocketWS(ws, params);
-	p2pServer.connect(socket);
+	if(url.pathname==p2pServer.path)
+		p2pServer.connect(socket);
+	else
+		console.error('no handler defined for websocket path', url.pathname);
 });
