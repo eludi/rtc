@@ -1,8 +1,8 @@
 {
-	"name": "eludi rtc",
+	"name": "rtc",
 	"description": "eludi realtime communication server",
 	"author": "Gerald Franz <gf@eludi.net>",
-	"version": "0.1.20160812",
+	"version": "0.1.20161125",
 	"dependencies": {
 		"ws": "*"
 	},
