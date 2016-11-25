@@ -69,7 +69,7 @@ function App(cfg) {
 		var hasPort = cfg.server.indexOf(':')>=0;
 		var isSecure = hasPort ? (cfg.server.substr(cfg.server.indexOf(':')+1)%1000==443) : false;
 		var socket = this.socket = (cfg.transmission =='ws')
-			? new EventSocket('ws'+(isSecure?'s':'')+'://' + cfg.server +'/'+cfg.channel, params)
+			? new EventSocket('ws'+(isSecure?'s':'')+'://' + cfg.server+'/p2p', params)
 			: new CometSocket('http'+(isSecure?'s':'')+'://'+cfg.server+'/p2p', params);
 
 		// lifecycle events:
