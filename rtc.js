@@ -1,8 +1,7 @@
-var http = require('http');
 var urllib = require('url');
-var qs = require('querystring');
-var fs = require('fs');
 var WebSocketServer = require('ws').Server;
+var httpUtils = require('./httpUtils');
+var respond = httpUtils.respond;
 
 var cfg = {
 	ip: process.env.OPENSHIFT_NODEJS_IP || '0.0.0.0',
@@ -16,92 +15,10 @@ var cfg = {
 		'http://eludi.cygnus.uberspace.de',
 		'https://eludi.cygnus.uberspace.de',
 	],
-	delayedResponse: 1500, // delay impeding denial of service / brute force attacks
 	devMode: false,
 };
 
-
-///------------------------------------------------------------------
-function respond(resp, code, body) {
-	var headers = { 'Cache-Control': 'no-cache, no-store, must-revalidate, proxy-revalidate', 'Pragma':'no-cache',
-		'Access-Control-Allow-Origin':'*' };
-	if(body)
-		headers['Content-Type']='application/json';
-	console.log('>>', code, body);
-	if(code==204) {
-		resp.writeHead(code, headers);
-		resp.end();
-	}
-	else if(code==200) {
-		resp.writeHead(code, headers);
-		resp.end((typeof body == 'object') ? JSON.stringify(body) : body);
-	}
-	else setTimeout(function() { // thwart brute force attacks
-		resp.writeHead(code, headers);
-		resp.end('{"status":'+code+',"error":"'+body+'"}');
-	}, cfg.delayedResponse);
-}
-
-function serveStatic(resp, path, basePath) {
-	var inferMime = function(fname) {
-		switch(fname.substr(fname.lastIndexOf('.')+1).toLowerCase()) {
-		case 'js':
-			return 'application/javascript';
-		case 'json':
-			return 'application/json';
-		case 'html':
-			return 'text/html';
-		case 'txt':
-			return 'text/plain';
-		case 'css':
-			return 'text/css';
-		case 'png':
-			return 'image/png';
-		case 'jpg':
-			return 'image/jpg';
-		case 'gif':
-			return 'image/gif';
-		default:
-			return console.log('WARNING mime-type unknown for ',fname);
-		}
-	}
-
-	if(path.indexOf('..')>=0)
-		return respond(resp,403, 'Forbidden');
-	if(!basePath)
-		basePath = __dirname;
-	fs.readFile(basePath + '/'+path, function (err,data) {
-		if (err)
-			return respond(resp, 404, JSON.stringify(err));
-		var headers = { 'Content-Type':inferMime(path) };
-		resp.writeHead(200, headers);
-		resp.end(data);
-	});
-}
-
-
-function parseArgs(args, settings) {
-	function err() {
-		console.error('ERROR arguments expected  as --arg1 value1 --argn value_n...');
-		return false;
-	}
-
-	if(!args.length)
-		return true;
-
-	for(var i=0; i+1<args.length; i+=2) {
-		if(args[i].substr(0,2)!='--')
-			return err();
-		var key = args[i].substr(2), value=args[i+1];
-		if(!(key in settings))
-			console.warn('WARNING ignoring unrecognized argument key', key);
-		else
-			settings[key]=value;
-	}
-	return true;
-}
-
-if(!parseArgs(process.argv.slice(2), cfg))
+if(!httpUtils.parseArgs(process.argv.slice(2), cfg))
 	process.exit(-1);
 if(cfg.devMode) {
 	cfg.allowOrigin.push('http://127.0.0.1');
@@ -236,78 +153,38 @@ function EventSocketWS(websocket, params) {
 }
 
 //------------------------------------------------------------------
-var httpServer = http.createServer(function(req, resp) {
-	// parse request:
-	var params = {};
-	var handle = function() {
-		var url = urllib.parse(req.url, true);
-		if(req.method!='POST')
-			params = url.query;
 
-		if(cfg.isOpenshift) {
-			if(req.headers['x-forwarded-port']!='8000' && req.headers['x-forwarded-port']!='8443') { // redirect necessary for working websockets
-				var redirect = 'https://'+req.headers['x-forwarded-host']+':8443'+url.path;
-				if(url.hash)
-					redirect += url.hash;
-				console.log(req.url,'->', redirect);
-				resp.writeHead(301, { 'Location': redirect });
-				return resp.end();
-			}
-		}
-
-		if(params.data && typeof params.data == 'string'
-			&& (params.data[0]=='{' || params.data[0]=='[' || params.data[0]=='"' ))
-			params.data = JSON.parse(params.data);
-
-		var path = url.pathname.substr(1).split('/');
-		if(path.length && path[path.length-1]=='')
-			path.pop();
-		var request = {
-			path:path,
-			params: params,
-			method:req.method,
-			protocol:(cfg.isOpenshift && req.headers['x-forwarded-proto']=='https') ? 'https' : 'http',
-			ip:('x-forwarded-for' in req.headers) ? req.headers['x-forwarded-for'] : req.connection.remoteAddress,
-			timestamp: new Date().getTime()
-		};
-		console.log(JSON.stringify(request))
-
+var httpServer = httpUtils.createServer(cfg.ip, cfg.port,
+	function(req, resp, method, path, params) {
 		// index.html
 		if(!path.length || path[0]=='index.html')
-			path = request.path = [ 'static', 'chat.html' ];
+			path = [ 'static', 'chat.html' ];
 
 		switch(path[0]) { // toplevel services:
 		case 'hello':
 			resp.writeHead(200, {'Content-Type': 'text/plain'});
 			resp.write(JSON.stringify(request)+'\n');
-			resp.end('Hello, world.\n');
-			return;
+			return resp.end('Hello, world.\n');
 		case 'p2p':
 			return p2pServer.handleRequest(req, resp);
 		case 'static':
 			if(path.length==2)
-				return serveStatic(resp, path[1], __dirname+'/'+path[0]);
+				return httpUtils.serveStatic(resp, path[1], __dirname+'/'+path[0]);
 		default:
 			respond(resp, 404, "Not Found");
 		}
-	}
-	if(req.method!='POST')
-		return handle();
-	var body = '';
-	req.on('data', function (data) {
-		body += data;
-		if (body.length > 1e6) { // avoid flood attack
-			resp.writeHead(413, {'Content-Type': 'text/plain'}).end();
-			req.connection.destroy();
+	},
+	function(req, protocol, url) {
+		if(cfg.isOpenshift) {
+			if(req.headers['x-forwarded-port']!='8000' && req.headers['x-forwarded-port']!='8443') { // redirect necessary for working websockets
+				var redirect = 'https://'+req.headers['x-forwarded-host']+':8443'+url.path;
+				if(url.hash)
+					redirect += url.hash;
+				return redirect;
+			}
 		}
+		return false;
 	});
-	req.on('end', function () {
-		params = qs.parse(body);
-		handle();
-	});
-});
-httpServer.listen(cfg.port, cfg.ip);
-console.log('Server listening at', cfg.port);
 
 function shutdown() {
 	console.log( "\nshutting down..." )
