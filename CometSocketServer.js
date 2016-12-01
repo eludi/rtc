@@ -67,8 +67,6 @@ function EventSocketComet(key, params) {
 			callback = this.callbacks['*'];
 		if(!callback)
 			return;
-		if(data && typeof data == 'string' && (data[0]=='{' || data[0]=='[' ))
-			data = JSON.parse(data);
 		callback(data, event);
 	}
 	this.emit = function(event, data) {
@@ -156,7 +154,7 @@ function Server(path, verifyClient) {
 		return s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4();
 	}
 
-	this.createSocket = function(req, url, resp) {
+	this.createSocket = function(req, resp, url) {
 		var protocol = (req.headers['x-forwarded-proto']=='https') ? 'https' : 'http';
 		var origin = req.headers.origin || req.headers.referer || '';
 		var info = { req:req, secure:protocol=='https', origin:origin };
@@ -172,13 +170,14 @@ function Server(path, verifyClient) {
 		return respond(resp, 200, { key:key });
 	}
 
-	this.handleRequest = function(req, resp) {
-		var url = urllib.parse(req.url, true);
+	this.handleRequest = function(req, resp, url) {
+		if(!url)
+			url = urllib.parse(req.url, true);
 		if(url.pathname.indexOf(this.path)!=0)
 			return false;
 
 		if(url.pathname.length==this.path.length)
-				return this.createSocket(req, url, resp);
+				return this.createSocket(req, resp, url);
 
 		var key = url.pathname.substr(this.path.length+1);
 		if(!key.length)

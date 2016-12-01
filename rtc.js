@@ -1,7 +1,6 @@
-var urllib = require('url');
 var WebSocketServer = require('ws').Server;
 var httpUtils = require('./httpUtils');
-var respond = httpUtils.respond;
+var EventSocketWS = require('./EventSocketWS');
 
 var cfg = {
 	ip: process.env.OPENSHIFT_NODEJS_IP || '0.0.0.0',
@@ -68,7 +67,7 @@ function verifyClient(info) {
 		if(info.origin.indexOf(cfg.allowOrigin[i])==0)
 			verified = true;
 
-	var params = urllib.parse(info.req.url, true).query;
+	var params = httpUtils.parseUrl(info.req.url).query;
 	if(!params.name || !params.channel)
 		verified = false;
 	console.log(verified? '\t-> accepted':'\t-> rejected');
@@ -102,119 +101,49 @@ p2pServer.gc = setInterval(function(self) { self.collectGarbage(); }, 10000, p2p
 p2pServer.on('connection', function(socket) { p2pServer.connect(socket); });
 
 //------------------------------------------------------------------
-function EventSocketWS(websocket, params) {
-	this.params = params;
-	this.callbacks = {};
-	this.ws = websocket;
-	this.key = (function() {
-		var s4 = function() {
-			return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
-		}
-		return s4() + s4() + s4() + s4() + s4() + s4() + s4() + s4();
-	})();
-		
-	this.on = function(event, callback) {
-		if(typeof callback=='function')
-			this.callbacks[event]=callback;
-		else if(!callback && this.callbacks[event])
-			delete this.callbacks[event];
-	}
-	this.notify = function(event, data) {
-		var callback = this.callbacks[event];
-		if(!callback)
-			callback = this.callbacks['*'];
-		if(!callback)
-			return;
-		if(data && typeof data == 'string' && (data[0]=='{' || data[0]=='[' ))
-			data = JSON.parse(data);
-		callback(data, event);
-	}
-	this.emit = function(event, data) {
-		var msg = { event:event };
-		if(data)
-			msg.data = data;
-		this.ws.send(JSON.stringify(msg));
-	}
-	this.close = function(code, reason) {
-		this.ws.close(code, reason);
-		this.notify('close', {code:code, reason:reason});
-	}
-
-	var self = this;
-	websocket.on('message', function(msg) {
-		console.log('ws', self.params.name+'@'+self.params.channel,'>>', msg);
-		msg = JSON.parse(msg);
-		self.notify(msg.event, msg.data);
-	});
-	websocket.on('close', function(code, reason) {
-		console.log('ws close', code, reason);
-		self.notify('close', { code:(code===undefined) ? 1000 : code, reason: reason ? reason : '' });
-	});
-}
-
-//------------------------------------------------------------------
 
 var httpServer = httpUtils.createServer(cfg.ip, cfg.port,
-	function(req, resp, method, path, params) {
+	function(req, resp, url) {
 		// index.html
-		if(!path.length || path[0]=='index.html')
-			path = [ 'static', 'chat.html' ];
+		if(!url.path.length || url.path[0]=='index.html')
+			url.path = [ 'static', 'chat.html' ];
 
-		switch(path[0]) { // toplevel services:
+		switch(url.path[0]) { // toplevel services:
 		case 'hello':
 			resp.writeHead(200, {'Content-Type': 'text/plain'});
-			resp.write(JSON.stringify(request)+'\n');
+			resp.write(req.method+' '+JSON.stringify(url)+'\n');
 			return resp.end('Hello, world.\n');
 		case 'p2p':
-			return p2pServer.handleRequest(req, resp);
+			return p2pServer.handleRequest(req, resp, url);
 		case 'static':
-			if(path.length==2)
-				return httpUtils.serveStatic(resp, path[1], __dirname+'/'+path[0]);
+			if(url.path.length==2)
+				return httpUtils.serveStatic(resp, url.path[1], __dirname+'/'+url.path[0]);
 		default:
-			respond(resp, 404, "Not Found");
+			httpUtils.respond(resp, 404, "Not Found");
 		}
 	},
 	function(req, protocol, url) {
-		if(cfg.isOpenshift) {
-			if(req.headers['x-forwarded-port']!='8000' && req.headers['x-forwarded-port']!='8443') { // redirect necessary for working websockets
-				var redirect = 'https://'+req.headers['x-forwarded-host']+':8443'+url.path;
-				if(url.hash)
-					redirect += url.hash;
-				return redirect;
-			}
+		if(cfg.isOpenshift && req.headers['x-forwarded-port']!='8443') { // redirect necessary for working websockets
+			var redirect = 'https://'+req.headers['x-forwarded-host']+':8443'+url.pathname;
+			if(url.hash)
+				redirect += url.hash;
+			return redirect;
 		}
 		return false;
 	});
 
-function shutdown() {
-	console.log( "\nshutting down..." )
-	// some other closing procedures go here
-	process.exit( )
-}
-if(process.platform==='win32') {
-	var tty = require("tty");
-	process.openStdin().on("keypress", function(chunk, key) { // Windows
-		if(key && key.name === "c" && key.ctrl)
-			return shutdown();
-	})
-}
-else {
-	process.on( 'SIGINT', shutdown);
-	process.on( 'SIGTERM', shutdown);
-}
+httpUtils.onShutdown(function() { console.log( "\nshutting down..." ); });
 
 //------------------------------------------------------------------
 // Create a server for handling websocket calls
 var wss = new WebSocketServer({server: httpServer, verifyClient:verifyClient});
 
 wss.on('connection', function(ws) {
-	var url = urllib.parse(ws.upgradeReq.url, true);
-	var params = url.query;
-	console.log('ws connect path:', url.pathname, 'params:', params);
+	var url = httpUtils.parseUrl(ws.upgradeReq.url);
+	console.log('ws connect path:', url.path, 'params:', url.query);
 
-	var socket = new EventSocketWS(ws, params);
 	if(url.pathname==p2pServer.path)
-		p2pServer.connect(socket);
+		p2pServer.connect(new EventSocketWS(ws, url.query));
 	else
-		console.error('no handler defined for websocket path', url.pathname);
+		console.error('no handler defined for websocket path', url.path);
 });

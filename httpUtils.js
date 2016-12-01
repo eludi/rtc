@@ -61,15 +61,31 @@ function serveStatic(resp, path, basePath) {
 	});
 }
 
+function parseUrl(url, params) {
+	if(typeof(url)=='string')
+		url = urllib.parse(url, true);
+	if(!Array.isArray(url.path)) {
+		url.path = url.pathname.substr(1).split('/');
+		if(url.path.length && url.path[url.path.length-1]=='')
+			url.path.pop();
+	}
+	if(params)
+		url.query = params;
+	for(var key in url.query) {
+		var value = url.query[key];
+		if(typeof value == 'string' && (value[0]=='{' || value[0]=='[' || value[0]=='"' ))
+			url.query[key] = JSON.parse(value);
+	}
+	return url;
+}
+
 function createServer(ip, port, requestHandler, redirectHandler) {
 	var isOpenshift = process.env.OPENSHIFT_NODEJS_IP!=null;
 	var httpServer = http.createServer(function(req, resp) {
 		// parse request:
 		var params = {};
 		var handle = function() {
-			var url = urllib.parse(req.url, true);
-			if(req.method!='POST')
-				params = url.query;
+			var url = parseUrl(req.url, req.method=='POST' ? params : null);
 			var protocol = (isOpenshift && req.headers['x-forwarded-proto']=='https')
 					? 'https' : url.protocol ? url.protocol.substr(0, url.protocol.length-1) : 'http';
 
@@ -82,23 +98,16 @@ function createServer(ip, port, requestHandler, redirectHandler) {
 				}
 			}
 
-			if(params.data && typeof params.data == 'string'
-				&& (params.data[0]=='{' || params.data[0]=='[' || params.data[0]=='"' ))
-				params.data = JSON.parse(params.data);
-
-			var path = url.pathname.substr(1).split('/');
-			if(path.length && path[path.length-1]=='')
-				path.pop();
 			var request = {
-				method:req.method,
-				path:path,
-				params: params,
+				method: req.method,
+				path: url.path,
+				params: url.query,
 				protocol: protocol,
 				remoteAddress:('x-forwarded-for' in req.headers) ? req.headers['x-forwarded-for'] : req.connection.remoteAddress,
 				timestamp: new Date().getTime()
 			};
 			console.log(JSON.stringify(request));
-			return requestHandler(req, resp, req.method, path, params, request.remoteAddress);
+			return requestHandler(req, resp, url, request.remoteAddress);
 		}
 		if(req.method!='POST')
 			return handle();
@@ -141,9 +150,31 @@ function parseArgs(args, settings) {
 	return true;
 }
 
+
+function onShutdown(callback) {
+	var shutdown = function() {
+		if(callback)
+			callback();
+		process.exit( )
+	}
+	if(process.platform==='win32') {
+		var tty = require("tty");
+		process.openStdin().on("keypress", function(chunk, key) { // Windows
+			if(key && key.name === "c" && key.ctrl)
+				return shutdown();
+		})
+	}
+	else {
+		process.on( 'SIGINT', shutdown);
+		process.on( 'SIGTERM', shutdown);
+	}
+}
+
 module.exports = {
 	respond: respond,
 	serveStatic: serveStatic,
 	createServer: createServer,
 	parseArgs: parseArgs,
+	parseUrl: parseUrl,
+	onShutdown: onShutdown,
 }
