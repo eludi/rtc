@@ -9,7 +9,8 @@ Returns all siblings of a set of start nodes, including the start nodes.
 
 ```
 HIERARCHY_SIBLINGS ( 
-    <hierarchy_navfunc_source_spec>
+
+<hierarchy_navfunc_source_spec>
     [ <hierarchy_navfunc_start_spec> ]
 )
 ```
@@ -25,6 +26,7 @@ Specifies a hierarchy for the function to operate on.
 <hierarchy_navfunc_source_spec> ::= SOURCE { <table_expression> | <hierarchy_generator_function> }
 ```
 
+|-|-|
 |`<table_expression>`|Specifies an unfiltered view or materialized result set, such as a table, containing all of the basic hierarchy attributes computed by a hierarchy generator function. A filtered result with all the basic hierarchy attributes containing the complete subtree of particular node of a hierarchy is also supported.|
 |`<hierarchy_generator_function>`|Specifies a hierarchy generator function directly (for example, the HIERARCHY function).|
 
